@@ -1,7 +1,7 @@
 """Zerproc light platform."""
 from datetime import timedelta
 import logging
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import pyzerproc
 
@@ -10,7 +10,7 @@ from homeassistant.components.light import (
     ATTR_HS_COLOR,
     SUPPORT_BRIGHTNESS,
     SUPPORT_COLOR,
-    Light,
+    LightEntity,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -95,7 +95,7 @@ async def async_setup_entry(
     async_track_time_interval(hass, discover, DISCOVERY_INTERVAL)
 
 
-class ZerprocLight(Light):
+class ZerprocLight(LightEntity):
     """Representation of an Zerproc Light."""
 
     def __init__(self, light):
@@ -141,6 +141,11 @@ class ZerprocLight(Light):
             "name": self.name,
             "manufacturer": "Zerproc",
         }
+
+    @property
+    def icon(self) -> Optional[str]:
+        """Return the icon to use in the frontend."""
+        return "mdi:string-lights"
 
     @property
     def supported_features(self):

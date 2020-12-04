@@ -66,18 +66,22 @@ async def test_user_no_devices_found(hass, discovery_flow_conf):
 
 
 async def test_user_has_confirmation(hass, discovery_flow_conf):
-    """Test user requires no confirmation to setup."""
-    flow = config_entries.HANDLERS["test"]()
-    flow.hass = hass
-    flow.context = {}
+    """Test user requires confirmation to setup."""
     discovery_flow_conf["discovered"] = True
+    mock_entity_platform(hass, "config_flow.test", None)
 
-    result = await flow.async_step_user()
+    result = await hass.config_entries.flow.async_init(
+        "test", context={"source": config_entries.SOURCE_USER}, data={}
+    )
 
     assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["step_id"] == "confirm"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
 
 
-@pytest.mark.parametrize("source", ["discovery", "ssdp", "zeroconf"])
+@pytest.mark.parametrize("source", ["discovery", "mqtt", "ssdp", "zeroconf"])
 async def test_discovery_single_instance(hass, discovery_flow_conf, source):
     """Test we not allow duplicates."""
     flow = config_entries.HANDLERS["test"]()
@@ -91,7 +95,7 @@ async def test_discovery_single_instance(hass, discovery_flow_conf, source):
     assert result["reason"] == "single_instance_allowed"
 
 
-@pytest.mark.parametrize("source", ["discovery", "ssdp", "zeroconf"])
+@pytest.mark.parametrize("source", ["discovery", "mqtt", "ssdp", "zeroconf"])
 async def test_discovery_confirmation(hass, discovery_flow_conf, source):
     """Test we ask for confirmation via discovery."""
     flow = config_entries.HANDLERS["test"]()
@@ -234,7 +238,7 @@ async def test_webhook_single_entry_allowed(hass, webhook_flow_conf):
     result = await flow.async_step_user()
 
     assert result["type"] == data_entry_flow.RESULT_TYPE_ABORT
-    assert result["reason"] == "one_instance_allowed"
+    assert result["reason"] == "single_instance_allowed"
 
 
 async def test_webhook_multiple_entries_allowed(hass, webhook_flow_conf):
@@ -255,7 +259,8 @@ async def test_webhook_config_flow_registers_webhook(hass, webhook_flow_conf):
     flow.hass = hass
 
     await async_process_ha_core_config(
-        hass, {"external_url": "https://example.com"},
+        hass,
+        {"external_url": "https://example.com"},
     )
     result = await flow.async_step_user(user_input={})
 

@@ -1,5 +1,4 @@
 """Config flow to configure the Arcam FMJ component."""
-import logging
 from urllib.parse import urlparse
 
 from arcam.fmj.client import Client, ConnectionFailed
@@ -12,8 +11,6 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DEFAULT_NAME, DEFAULT_PORT, DOMAIN, DOMAIN_DATA_ENTRIES
-
-_LOGGER = logging.getLogger(__name__)
 
 
 def get_entry_client(hass, entry):
@@ -37,29 +34,30 @@ class ArcamFmjFlowHandler(config_entries.ConfigFlow):
         try:
             await client.start()
         except ConnectionFailed:
-            return self.async_abort(reason="unable_to_connect")
+            return self.async_abort(reason="cannot_connect")
         finally:
             await client.stop()
 
         return self.async_create_entry(
-            title=f"{DEFAULT_NAME} ({host})", data={CONF_HOST: host, CONF_PORT: port},
+            title=f"{DEFAULT_NAME} ({host})",
+            data={CONF_HOST: host, CONF_PORT: port},
         )
 
-    async def async_step_user(self, user_info=None):
+    async def async_step_user(self, user_input=None):
         """Handle a discovered device."""
         errors = {}
 
-        if user_info is not None:
+        if user_input is not None:
             uuid = await get_uniqueid_from_host(
-                async_get_clientsession(self.hass), user_info[CONF_HOST]
+                async_get_clientsession(self.hass), user_input[CONF_HOST]
             )
             if uuid:
                 await self._async_set_unique_id_and_update(
-                    user_info[CONF_HOST], user_info[CONF_PORT], uuid
+                    user_input[CONF_HOST], user_input[CONF_PORT], uuid
                 )
 
             return await self._async_check_and_create(
-                user_info[CONF_HOST], user_info[CONF_PORT]
+                user_input[CONF_HOST], user_input[CONF_PORT]
             )
 
         fields = {

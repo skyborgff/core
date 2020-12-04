@@ -34,18 +34,20 @@ class FakeEndpoint:
         self.device_type = None
         self.request = AsyncMock(return_value=[0])
 
-    def add_input_cluster(self, cluster_id):
+    def add_input_cluster(self, cluster_id, _patch_cluster=True):
         """Add an input cluster."""
         cluster = zigpy.zcl.Cluster.from_id(self, cluster_id, is_server=True)
-        patch_cluster(cluster)
+        if _patch_cluster:
+            patch_cluster(cluster)
         self.in_clusters[cluster_id] = cluster
         if hasattr(cluster, "ep_attribute"):
             setattr(self, cluster.ep_attribute, cluster)
 
-    def add_output_cluster(self, cluster_id):
+    def add_output_cluster(self, cluster_id, _patch_cluster=True):
         """Add an output cluster."""
         cluster = zigpy.zcl.Cluster.from_id(self, cluster_id, is_server=False)
-        patch_cluster(cluster)
+        if _patch_cluster:
+            patch_cluster(cluster)
         self.out_clusters[cluster_id] = cluster
 
     reply = AsyncMock(return_value=[0])
@@ -68,12 +70,34 @@ FakeEndpoint.remove_from_group = zigpy_ep.remove_from_group
 
 def patch_cluster(cluster):
     """Patch a cluster for testing."""
+    cluster.PLUGGED_ATTR_READS = {}
+
+    async def _read_attribute_raw(attributes, *args, **kwargs):
+        result = []
+        for attr_id in attributes:
+            value = cluster.PLUGGED_ATTR_READS.get(attr_id)
+            if value is None:
+                # try converting attr_id to attr_name and lookup the plugs again
+                attr_name = cluster.attributes.get(attr_id)
+                value = attr_name and cluster.PLUGGED_ATTR_READS.get(attr_name[0])
+            if value is not None:
+                result.append(
+                    zcl_f.ReadAttributeRecord(
+                        attr_id,
+                        zcl_f.Status.SUCCESS,
+                        zcl_f.TypeValue(python_type=None, value=value),
+                    )
+                )
+            else:
+                result.append(zcl_f.ReadAttributeRecord(attr_id, zcl_f.Status.FAILURE))
+        return (result,)
+
     cluster.bind = AsyncMock(return_value=[0])
     cluster.configure_reporting = AsyncMock(return_value=[0])
     cluster.deserialize = Mock()
     cluster.handle_cluster_request = Mock()
-    cluster.read_attributes = AsyncMock(return_value=[{}, {}])
-    cluster.read_attributes_raw = Mock()
+    cluster.read_attributes = AsyncMock(wraps=cluster.read_attributes)
+    cluster.read_attributes_raw = AsyncMock(side_effect=_read_attribute_raw)
     cluster.unbind = AsyncMock(return_value=[0])
     cluster.write_attributes = AsyncMock(
         return_value=[zcl_f.WriteAttributesResponse.deserialize(b"\x00")[0]]
@@ -106,6 +130,7 @@ class FakeDevice:
         if node_desc is None:
             node_desc = b"\x02@\x807\x10\x7fd\x00\x00*d\x00\x00"
         self.node_desc = zigpy.zdo.types.NodeDescriptor.deserialize(node_desc)[0]
+        self.neighbors = []
 
 
 FakeDevice.add_to_group = zigpy_dev.add_to_group
@@ -175,10 +200,10 @@ def async_find_group_entity_id(hass, domain, group):
     return None
 
 
-async def async_enable_traffic(hass, zha_devices):
+async def async_enable_traffic(hass, zha_devices, enabled=True):
     """Allow traffic to flow through the gateway and the zha device."""
     for zha_device in zha_devices:
-        zha_device.update_available(True)
+        zha_device.update_available(enabled)
     await hass.async_block_till_done()
 
 

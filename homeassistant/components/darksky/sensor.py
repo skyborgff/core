@@ -18,13 +18,14 @@ from homeassistant.const import (
     DEGREE,
     LENGTH_CENTIMETERS,
     LENGTH_KILOMETERS,
+    PERCENTAGE,
+    PRECIPITATION_MILLIMETERS_PER_HOUR,
+    PRESSURE_MBAR,
     SPEED_KILOMETERS_PER_HOUR,
     SPEED_METERS_PER_SECOND,
     SPEED_MILES_PER_HOUR,
     TEMP_CELSIUS,
     TEMP_FAHRENHEIT,
-    TIME_HOURS,
-    UNIT_PERCENTAGE,
     UV_INDEX,
 )
 import homeassistant.helpers.config_validation as cv
@@ -109,21 +110,21 @@ SENSOR_TYPES = {
     ],
     "precip_intensity": [
         "Precip Intensity",
-        f"mm/{TIME_HOURS}",
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
         "in",
-        f"mm/{TIME_HOURS}",
-        f"mm/{TIME_HOURS}",
-        f"mm/{TIME_HOURS}",
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
         "mdi:weather-rainy",
         ["currently", "minutely", "hourly", "daily"],
     ],
     "precip_probability": [
         "Precip Probability",
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
         "mdi:water-percent",
         ["currently", "minutely", "hourly", "daily"],
     ],
@@ -199,31 +200,31 @@ SENSOR_TYPES = {
     ],
     "cloud_cover": [
         "Cloud Coverage",
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
         "mdi:weather-partly-cloudy",
         ["currently", "hourly", "daily"],
     ],
     "humidity": [
         "Humidity",
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
-        UNIT_PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
+        PERCENTAGE,
         "mdi:water-percent",
         ["currently", "hourly", "daily"],
     ],
     "pressure": [
         "Pressure",
-        "mbar",
-        "mbar",
-        "mbar",
-        "mbar",
-        "mbar",
+        PRESSURE_MBAR,
+        PRESSURE_MBAR,
+        PRESSURE_MBAR,
+        PRESSURE_MBAR,
+        PRESSURE_MBAR,
         "mdi:gauge",
         ["currently", "hourly", "daily"],
     ],
@@ -329,11 +330,11 @@ SENSOR_TYPES = {
     ],
     "precip_intensity_max": [
         "Daily Max Precip Intensity",
-        f"mm/{TIME_HOURS}",
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
         "in",
-        f"mm/{TIME_HOURS}",
-        f"mm/{TIME_HOURS}",
-        f"mm/{TIME_HOURS}",
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
+        PRECIPITATION_MILLIMETERS_PER_HOUR,
         "mdi:thermometer",
         ["daily"],
     ],
@@ -798,6 +799,7 @@ class DarkSkyData:
         self.longitude = longitude
         self.units = units
         self.language = language
+        self._connect_error = False
 
         self.data = None
         self.unit_system = None
@@ -825,8 +827,13 @@ class DarkSkyData:
                 units=self.units,
                 lang=self.language,
             )
+            if self._connect_error:
+                self._connect_error = False
+                _LOGGER.info("Reconnected to Dark Sky")
         except (ConnectError, HTTPError, Timeout, ValueError) as error:
-            _LOGGER.error("Unable to connect to Dark Sky: %s", error)
+            if not self._connect_error:
+                self._connect_error = True
+                _LOGGER.error("Unable to connect to Dark Sky: %s", error)
             self.data = None
         self.unit_system = self.data and self.data.json["flags"]["units"]
 

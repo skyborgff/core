@@ -15,6 +15,7 @@ DATA_DELETED_IDS = "deleted_ids"
 DATA_DEVICES = "devices"
 DATA_SENSOR = "sensor"
 DATA_STORE = "store"
+DATA_NOTIFY = "notify"
 
 ATTR_APP_DATA = "app_data"
 ATTR_APP_ID = "app_id"
@@ -72,3 +73,5 @@ ATTR_SENSOR_UOM = "unit_of_measurement"
 
 SIGNAL_SENSOR_UPDATE = f"{DOMAIN}_sensor_update"
 SIGNAL_LOCATION_UPDATE = DOMAIN + "_location_update_{}"
+
+ATTR_CAMERA_ENTITY_ID = "camera_entity_id"

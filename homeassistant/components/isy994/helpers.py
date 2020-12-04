@@ -330,7 +330,7 @@ def _categorize_programs(hass_isy_data: dict, programs: Programs) -> None:
             status = entity_folder.get_by_name(KEY_STATUS)
             if not status or not status.protocol == PROTO_PROGRAM:
                 _LOGGER.warning(
-                    "Program %s entity '%s' not loaded, invalid/missing status program.",
+                    "Program %s entity '%s' not loaded, invalid/missing status program",
                     platform,
                     entity_folder.name,
                 )
@@ -340,7 +340,7 @@ def _categorize_programs(hass_isy_data: dict, programs: Programs) -> None:
                 actions = entity_folder.get_by_name(KEY_ACTIONS)
                 if not actions or not actions.protocol == PROTO_PROGRAM:
                     _LOGGER.warning(
-                        "Program %s entity '%s' not loaded, invalid/missing actions program.",
+                        "Program %s entity '%s' not loaded, invalid/missing actions program",
                         platform,
                         entity_folder.name,
                     )
@@ -402,7 +402,7 @@ async def migrate_old_unique_ids(
 def convert_isy_value_to_hass(
     value: Union[int, float, None],
     uom: str,
-    precision: str,
+    precision: Union[int, str],
     fallback_precision: Optional[int] = None,
 ) -> Union[float, int]:
     """Fix ISY Reported Values.
@@ -418,7 +418,7 @@ def convert_isy_value_to_hass(
         return None
     if uom in [UOM_DOUBLE_TEMP, UOM_ISYV4_DEGREES]:
         return round(float(value) / 2.0, 1)
-    if precision != "0":
+    if precision not in ("0", 0):
         return round(float(value) / 10 ** int(precision), int(precision))
     if fallback_precision:
         return round(float(value), fallback_precision)

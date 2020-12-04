@@ -156,12 +156,14 @@ async def async_setup_entry(
             password=password,
             use_https=https,
             tls_ver=tls_version,
-            log=_LOGGER,
             webroot=host.path,
         )
     )
     if not isy.connected:
         return False
+
+    # Trigger a status update for all nodes, not done automatically in PyISY v2.x
+    await hass.async_add_executor_job(isy.nodes.update)
 
     _categorize_nodes(hass_isy_data, isy.nodes, ignore_identifier, sensor_identifier)
     _categorize_programs(hass_isy_data, isy.programs)
@@ -181,7 +183,7 @@ async def async_setup_entry(
 
     def _start_auto_update() -> None:
         """Start isy auto update."""
-        _LOGGER.debug("ISY Starting Event Stream and automatic updates.")
+        _LOGGER.debug("ISY Starting Event Stream and automatic updates")
         isy.auto_update = True
 
     await hass.async_add_executor_job(_start_auto_update)
@@ -257,7 +259,7 @@ async def async_unload_entry(
 
     def _stop_auto_update() -> None:
         """Start isy auto update."""
-        _LOGGER.debug("ISY Stopping Event Stream and automatic updates.")
+        _LOGGER.debug("ISY Stopping Event Stream and automatic updates")
         isy.auto_update = False
 
     await hass.async_add_executor_job(_stop_auto_update)
