@@ -15,7 +15,7 @@
                     "port": "Porto",
                     "site": "Site ID",
                     "username": "Nome do utilizador",
-                    "verify_ssl": "Controlador com certificados adequados"
+                    "verify_ssl": "Verificar o certificado SSL"
                 },
                 "title": "Configurar o controlador UniFi"
             }
@@ -39,6 +39,12 @@
                 "data": {
                     "one": "Vazio",
                     "other": "Vazios"
+                }
+            },
+            "simple_options": {
+                "data": {
+                    "track_clients": "Acompanhar clientes da rede",
+                    "track_devices": "Acompanhar dispositivos de rede (dispositivos Ubiquiti)"
                 }
             },
             "statistics_sensors": {

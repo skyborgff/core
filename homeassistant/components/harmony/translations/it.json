@@ -7,18 +7,27 @@
             "cannot_connect": "Impossibile connettersi",
             "unknown": "Errore imprevisto"
         },
-        "flow_title": "Logitech Harmony Hub {name}",
+        "flow_title": "{name}",
         "step": {
             "link": {
-                "description": "Vuoi impostare {name} ({host})?",
-                "title": "Impostazione di Logitech Harmony Hub"
+                "description": "Vuoi configurare {name} ({host})?",
+                "title": "Configura Logitech Harmony Hub"
             },
             "user": {
                 "data": {
                     "host": "Host",
                     "name": "Nome Hub"
                 },
-                "title": "Configurare Logitech Harmony Hub"
+                "title": "Configura Logitech Harmony Hub"
+            }
+        }
+    },
+    "entity": {
+        "select": {
+            "activities": {
+                "state": {
+                    "power_off": "Spegnimento"
+                }
             }
         }
     },
@@ -29,7 +38,7 @@
                     "activity": "L'attivit\u00e0 predefinita da eseguire quando nessuna \u00e8 specificata.",
                     "delay_secs": "Il ritardo tra l'invio dei comandi."
                 },
-                "description": "Regolare le opzioni di Harmony Hub"
+                "description": "Regola le opzioni di Harmony Hub"
             }
         }
     }

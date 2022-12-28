@@ -5,7 +5,7 @@
             "cannot_connect": "\u00dchendus nurjus",
             "invalid_auth": "Tuvastamise viga"
         },
-        "flow_title": "OVO Energy: {username}",
+        "flow_title": "{username}",
         "step": {
             "reauth": {
                 "data": {
@@ -16,6 +16,7 @@
             },
             "user": {
                 "data": {
+                    "account": "OVO konto ID (lisa ainult siis, kui on mitu kontot)",
                     "password": "Salas\u00f5na",
                     "username": "Kasutajanimi"
                 },

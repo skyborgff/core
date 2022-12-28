@@ -1,16 +1,21 @@
 """Integration with the Rachio Iro sprinkler system controller."""
 from abc import abstractmethod
+from contextlib import suppress
 from datetime import timedelta
 import logging
+from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import ATTR_ENTITY_ID
-from homeassistant.core import callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_ID
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import as_timestamp, now, parse_datetime, utc_from_timestamp
 
@@ -49,6 +54,7 @@ from .const import (
     SLOPE_SLIGHT,
     SLOPE_STEEP,
 )
+from .device import RachioPerson
 from .entity import RachioDevice
 from .webhooks import (
     SUBTYPE_RAIN_DELAY_OFF,
@@ -67,7 +73,6 @@ from .webhooks import (
 _LOGGER = logging.getLogger(__name__)
 
 ATTR_DURATION = "duration"
-ATTR_ID = "id"
 ATTR_PERCENT = "percent"
 ATTR_SCHEDULE_SUMMARY = "Summary"
 ATTR_SCHEDULE_ENABLED = "Enabled"
@@ -88,7 +93,11 @@ START_MULTIPLE_ZONES_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Set up the Rachio switches."""
     zone_entities = []
     has_flex_sched = False
@@ -100,9 +109,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             has_flex_sched = True
 
     async_add_entities(entities)
-    _LOGGER.info("%d Rachio switch(es) added", len(entities))
+    _LOGGER.debug("%d Rachio switch(es) added", len(entities))
 
-    def start_multiple(service):
+    def start_multiple(service: ServiceCall) -> None:
         """Service to start multiple zones in sequence."""
         zones_list = []
         person = hass.data[DOMAIN_RACHIO][config_entry.entry_id]
@@ -140,7 +149,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     )
 
     if has_flex_sched:
-        platform = entity_platform.current_platform.get()
+        platform = entity_platform.async_get_current_platform()
         platform.async_register_entity_service(
             SERVICE_SET_ZONE_MOISTURE,
             {vol.Required(ATTR_PERCENT): cv.positive_int},
@@ -148,9 +157,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         )
 
 
-def _create_entities(hass, config_entry):
-    entities = []
-    person = hass.data[DOMAIN_RACHIO][config_entry.entry_id]
+def _create_entities(hass: HomeAssistant, config_entry: ConfigEntry) -> list[Entity]:
+    entities: list[Entity] = []
+    person: RachioPerson = hass.data[DOMAIN_RACHIO][config_entry.entry_id]
     # Fetch the schedule once at startup
     # in order to avoid every zone doing it
     for controller in person.controllers:
@@ -229,15 +238,15 @@ class RachioStandbySwitch(RachioSwitch):
 
         self.async_write_ha_state()
 
-    def turn_on(self, **kwargs) -> None:
+    def turn_on(self, **kwargs: Any) -> None:
         """Put the controller in standby mode."""
         self._controller.rachio.device.turn_off(self._controller.controller_id)
 
-    def turn_off(self, **kwargs) -> None:
+    def turn_off(self, **kwargs: Any) -> None:
         """Resume controller functionality."""
         self._controller.rachio.device.turn_on(self._controller.controller_id)
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Subscribe to updates."""
         if KEY_ON in self._controller.init_data:
             self._state = not self._controller.init_data[KEY_ON]
@@ -285,6 +294,7 @@ class RachioRainDelay(RachioSwitch):
             endtime = parse_datetime(args[0][0][KEY_RAIN_DELAY_END])
             _LOGGER.debug("Rain delay expires at %s", endtime)
             self._state = True
+            assert endtime is not None
             self._cancel_update = async_track_point_in_utc_time(
                 self.hass, self._delay_expiration, endtime
             )
@@ -300,17 +310,17 @@ class RachioRainDelay(RachioSwitch):
         self._cancel_update = None
         self.async_write_ha_state()
 
-    def turn_on(self, **kwargs) -> None:
+    def turn_on(self, **kwargs: Any) -> None:
         """Activate a 24 hour rain delay on the controller."""
         self._controller.rachio.device.rain_delay(self._controller.controller_id, 86400)
         _LOGGER.debug("Starting rain delay for 24 hours")
 
-    def turn_off(self, **kwargs) -> None:
+    def turn_off(self, **kwargs: Any) -> None:
         """Resume controller functionality."""
         self._controller.rachio.device.rain_delay(self._controller.controller_id, 0)
         _LOGGER.debug("Canceling rain delay")
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Subscribe to updates."""
         if KEY_RAIN_DELAY in self._controller.init_data:
             self._state = self._controller.init_data[
@@ -356,7 +366,7 @@ class RachioZone(RachioSwitch):
 
     def __str__(self):
         """Display the zone as a string."""
-        return 'Rachio Zone "{}" on {}'.format(self.name, str(self._controller))
+        return f'Rachio Zone "{self.name}" on {str(self._controller)}'
 
     @property
     def zone_id(self) -> str:
@@ -389,7 +399,7 @@ class RachioZone(RachioSwitch):
         return self._entity_picture
 
     @property
-    def device_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict:
         """Return the optional state attributes."""
         props = {ATTR_ZONE_NUMBER: self._zone_number, ATTR_ZONE_SUMMARY: self._summary}
         if self._shade_type:
@@ -407,7 +417,7 @@ class RachioZone(RachioSwitch):
                 props[ATTR_ZONE_SLOPE] = "Steep"
         return props
 
-    def turn_on(self, **kwargs) -> None:
+    def turn_on(self, **kwargs: Any) -> None:
         """Start watering this zone."""
         # Stop other zones first
         self.turn_off()
@@ -418,6 +428,7 @@ class RachioZone(RachioSwitch):
                 CONF_MANUAL_RUN_MINS, DEFAULT_MANUAL_RUN_MINS
             )
         )
+        # The API limit is 3 hours, and requires an int be passed
         self._controller.rachio.zone.start(self.zone_id, manual_run_time.seconds)
         _LOGGER.debug(
             "Watering %s on %s for %s",
@@ -426,7 +437,7 @@ class RachioZone(RachioSwitch):
             str(manual_run_time),
         )
 
-    def turn_off(self, **kwargs) -> None:
+    def turn_off(self, **kwargs: Any) -> None:
         """Stop watering all zones."""
         self._controller.stop_watering()
 
@@ -454,7 +465,7 @@ class RachioZone(RachioSwitch):
 
         self.async_write_ha_state()
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Subscribe to updates."""
         self._state = self.zone_id == self._current_schedule.get(KEY_ZONE_ID)
 
@@ -495,7 +506,7 @@ class RachioSchedule(RachioSwitch):
         return "mdi:water" if self.schedule_is_enabled else "mdi:water-off"
 
     @property
-    def device_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict:
         """Return the optional state attributes."""
         return {
             ATTR_SCHEDULE_SUMMARY: self._summary,
@@ -509,7 +520,7 @@ class RachioSchedule(RachioSwitch):
         """Return whether the schedule is allowed to run."""
         return self._schedule_enabled
 
-    def turn_on(self, **kwargs) -> None:
+    def turn_on(self, **kwargs: Any) -> None:
         """Start this schedule."""
         self._controller.rachio.schedulerule.start(self._schedule_id)
         _LOGGER.debug(
@@ -518,7 +529,7 @@ class RachioSchedule(RachioSwitch):
             self._controller.name,
         )
 
-    def turn_off(self, **kwargs) -> None:
+    def turn_off(self, **kwargs: Any) -> None:
         """Stop watering all zones."""
         self._controller.stop_watering()
 
@@ -526,7 +537,7 @@ class RachioSchedule(RachioSwitch):
     def _async_handle_update(self, *args, **kwargs) -> None:
         """Handle incoming webhook schedule data."""
         # Schedule ID not passed when running individual zones, so we catch that error
-        try:
+        with suppress(KeyError):
             if args[0][KEY_SCHEDULE_ID] == self._schedule_id:
                 if args[0][KEY_SUBTYPE] in [SUBTYPE_SCHEDULE_STARTED]:
                     self._state = True
@@ -535,12 +546,10 @@ class RachioSchedule(RachioSwitch):
                     SUBTYPE_SCHEDULE_COMPLETED,
                 ]:
                     self._state = False
-        except KeyError:
-            pass
 
         self.async_write_ha_state()
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Subscribe to updates."""
         self._state = self._schedule_id == self._current_schedule.get(KEY_SCHEDULE_ID)
 

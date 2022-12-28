@@ -1,18 +1,27 @@
 """Config flow to configure Met component."""
-from typing import Any, Dict, Optional
+from __future__ import annotations
+
+from typing import Any
 
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 
-from .const import CONF_TRACK_HOME, DOMAIN, HOME_LOCATION_NAME
+from .const import (
+    CONF_TRACK_HOME,
+    DEFAULT_HOME_LATITUDE,
+    DEFAULT_HOME_LONGITUDE,
+    DOMAIN,
+    HOME_LOCATION_NAME,
+)
 
 
 @callback
-def configured_instances(hass):
+def configured_instances(hass: HomeAssistant) -> set[str]:
     """Return a set of configured SimpliSafe instances."""
     entries = []
     for entry in hass.config_entries.async_entries(DOMAIN):
@@ -29,13 +38,14 @@ class MetFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Met component."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Init MetFlowHandler."""
-        self._errors = {}
+        self._errors: dict[str, Any] = {}
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle a flow initialized by the user."""
         self._errors = {}
 
@@ -57,8 +67,12 @@ class MetFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _show_config_form(
-        self, name=None, latitude=None, longitude=None, elevation=None
-    ):
+        self,
+        name: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        elevation: int | None = None,
+    ) -> FlowResult:
         """Show the configuration form to edit location data."""
         return self.async_show_form(
             step_id="user",
@@ -73,14 +87,18 @@ class MetFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             errors=self._errors,
         )
 
-    async def async_step_import(
-        self, user_input: Optional[Dict] = None
-    ) -> Dict[str, Any]:
-        """Handle configuration by yaml file."""
-        return await self.async_step_user(user_input)
-
-    async def async_step_onboarding(self, data=None):
+    async def async_step_onboarding(
+        self, data: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle a flow initialized by onboarding."""
+        # Don't create entry if latitude or longitude isn't set.
+        # Also, filters out our onboarding default location.
+        if (not self.hass.config.latitude and not self.hass.config.longitude) or (
+            self.hass.config.latitude == DEFAULT_HOME_LATITUDE
+            and self.hass.config.longitude == DEFAULT_HOME_LONGITUDE
+        ):
+            return self.async_abort(reason="no_home")
+
         return self.async_create_entry(
             title=HOME_LOCATION_NAME, data={CONF_TRACK_HOME: True}
         )

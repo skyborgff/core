@@ -1,11 +1,15 @@
 """Support for sending data to an Influx database."""
+from __future__ import annotations
+
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 import logging
 import math
 import queue
 import threading
 import time
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 from influxdb import InfluxDBClient, exceptions
 from influxdb_client import InfluxDBClient as InfluxDBClientV2
@@ -26,7 +30,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import callback
+from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers import event as event_helper, state as state_helper
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_values import EntityValues
@@ -34,6 +38,7 @@ from homeassistant.helpers.entityfilter import (
     INCLUDE_EXCLUDE_BASE_FILTER_SCHEMA,
     convert_include_exclude_filter,
 )
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     API_VERSION_2,
@@ -62,6 +67,7 @@ from .const import (
     CONF_PRECISION,
     CONF_RETRY_COUNT,
     CONF_SSL,
+    CONF_SSL_CA_CERT,
     CONF_TAGS,
     CONF_TAGS_ATTRIBUTES,
     CONF_TOKEN,
@@ -99,7 +105,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def create_influx_url(conf: Dict) -> Dict:
+def create_influx_url(conf: dict) -> dict:
     """Build URL used from config inputs and default when necessary."""
     if conf[CONF_API_VERSION] == API_VERSION_2:
         if CONF_SSL not in conf:
@@ -124,23 +130,26 @@ def create_influx_url(conf: Dict) -> Dict:
     return conf
 
 
-def validate_version_specific_config(conf: Dict) -> Dict:
+def validate_version_specific_config(conf: dict) -> dict:
     """Ensure correct config fields are provided based on API version used."""
     if conf[CONF_API_VERSION] == API_VERSION_2:
         if CONF_TOKEN not in conf:
             raise vol.Invalid(
-                f"{CONF_TOKEN} and {CONF_BUCKET} are required when {CONF_API_VERSION} is {API_VERSION_2}"
+                f"{CONF_TOKEN} and {CONF_BUCKET} are required when"
+                f" {CONF_API_VERSION} is {API_VERSION_2}"
             )
 
         if CONF_USERNAME in conf:
             raise vol.Invalid(
-                f"{CONF_USERNAME} and {CONF_PASSWORD} are only allowed when {CONF_API_VERSION} is {DEFAULT_API_VERSION}"
+                f"{CONF_USERNAME} and {CONF_PASSWORD} are only allowed when"
+                f" {CONF_API_VERSION} is {DEFAULT_API_VERSION}"
             )
 
     else:
         if CONF_TOKEN in conf:
             raise vol.Invalid(
-                f"{CONF_TOKEN} and {CONF_BUCKET} are only allowed when {CONF_API_VERSION} is {API_VERSION_2}"
+                f"{CONF_TOKEN} and {CONF_BUCKET} are only allowed when"
+                f" {CONF_API_VERSION} is {API_VERSION_2}"
             )
 
     return conf
@@ -192,13 +201,13 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-def _generate_event_to_json(conf: Dict) -> Callable[[Dict], str]:
+def _generate_event_to_json(conf: dict) -> Callable[[Event], dict[str, Any] | None]:
     """Build event to json converter and add to config."""
     entity_filter = convert_include_exclude_filter(conf)
     tags = conf.get(CONF_TAGS)
-    tags_attributes = conf.get(CONF_TAGS_ATTRIBUTES)
+    tags_attributes: list[str] = conf[CONF_TAGS_ATTRIBUTES]
     default_measurement = conf.get(CONF_DEFAULT_MEASUREMENT)
-    measurement_attr = conf.get(CONF_MEASUREMENT_ATTR)
+    measurement_attr: str = conf[CONF_MEASUREMENT_ATTR]
     override_measurement = conf.get(CONF_OVERRIDE_MEASUREMENT)
     global_ignore_attributes = set(conf[CONF_IGNORE_ATTRIBUTES])
     component_config = EntityValues(
@@ -207,15 +216,15 @@ def _generate_event_to_json(conf: Dict) -> Callable[[Dict], str]:
         conf[CONF_COMPONENT_CONFIG_GLOB],
     )
 
-    def event_to_json(event: Dict) -> str:
+    def event_to_json(event: Event) -> dict[str, Any] | None:
         """Convert event into json in format Influx expects."""
-        state = event.data.get(EVENT_NEW_STATE)
+        state: State | None = event.data.get(EVENT_NEW_STATE)
         if (
             state is None
-            or state.state in (STATE_UNKNOWN, "", STATE_UNAVAILABLE)
+            or state.state in (STATE_UNKNOWN, "", STATE_UNAVAILABLE, None)
             or not entity_filter(state.entity_id)
         ):
-            return
+            return None
 
         try:
             _include_state = _include_value = False
@@ -257,7 +266,7 @@ def _generate_event_to_json(conf: Dict) -> Callable[[Dict], str]:
                 else:
                     include_uom = measurement_attr != "unit_of_measurement"
 
-        json = {
+        json: dict[str, Any] = {
             INFLUX_CONF_MEASUREMENT: measurement,
             INFLUX_CONF_TAGS: {
                 CONF_DOMAIN: state.domain,
@@ -301,11 +310,9 @@ def _generate_event_to_json(conf: Dict) -> Callable[[Dict], str]:
                         )
 
                 # Infinity and NaN are not valid floats in InfluxDB
-                try:
+                with suppress(KeyError, TypeError):
                     if not math.isfinite(json[INFLUX_CONF_FIELDS][key]):
                         del json[INFLUX_CONF_FIELDS][key]
-                except (KeyError, TypeError):
-                    pass
 
         json[INFLUX_CONF_TAGS].update(tags)
 
@@ -318,13 +325,15 @@ def _generate_event_to_json(conf: Dict) -> Callable[[Dict], str]:
 class InfluxClient:
     """An InfluxDB client wrapper for V1 or V2."""
 
-    data_repositories: List[str]
+    data_repositories: list[str]
     write: Callable[[str], None]
-    query: Callable[[str, str], List[Any]]
+    query: Callable[[str, str], list[Any]]
     close: Callable[[], None]
 
 
-def get_influx_connection(conf, test_write=False, test_read=False):
+def get_influx_connection(  # noqa: C901
+    conf, test_write=False, test_read=False
+) -> InfluxClient:
     """Create the correct influx connection for the API version."""
     kwargs = {
         CONF_TIMEOUT: TIMEOUT,
@@ -332,9 +341,13 @@ def get_influx_connection(conf, test_write=False, test_read=False):
     precision = conf.get(CONF_PRECISION)
 
     if conf[CONF_API_VERSION] == API_VERSION_2:
+        kwargs[CONF_TIMEOUT] = TIMEOUT * 1000
         kwargs[CONF_URL] = conf[CONF_URL]
         kwargs[CONF_TOKEN] = conf[CONF_TOKEN]
         kwargs[INFLUX_CONF_ORG] = conf[CONF_ORG]
+        kwargs[CONF_VERIFY_SSL] = conf[CONF_VERIFY_SSL]
+        if CONF_SSL_CA_CERT in conf:
+            kwargs[CONF_SSL_CA_CERT] = conf[CONF_SSL_CA_CERT]
         bucket = conf.get(CONF_BUCKET)
         influx = InfluxDBClientV2(**kwargs)
         query_api = influx.query_api()
@@ -376,10 +389,8 @@ def get_influx_connection(conf, test_write=False, test_read=False):
         if test_write:
             # Try to write b"" to influx. If we can connect and creds are valid
             # Then invalid inputs is returned. Anything else is a broken config
-            try:
+            with suppress(ValueError):
                 write_v2(b"")
-            except ValueError:
-                pass
             write_api = influx.write_api(write_options=ASYNCHRONOUS)
 
         if test_read:
@@ -392,7 +403,10 @@ def get_influx_connection(conf, test_write=False, test_read=False):
         return InfluxClient(buckets, write_v2, query_v2, close_v2)
 
     # Else it's a V1 client
-    kwargs[CONF_VERIFY_SSL] = conf[CONF_VERIFY_SSL]
+    if CONF_SSL_CA_CERT in conf and conf[CONF_VERIFY_SSL]:
+        kwargs[CONF_VERIFY_SSL] = conf[CONF_SSL_CA_CERT]
+    else:
+        kwargs[CONF_VERIFY_SSL] = conf[CONF_VERIFY_SSL]
 
     if CONF_DB_NAME in conf:
         kwargs[CONF_DB_NAME] = conf[CONF_DB_NAME]
@@ -461,14 +475,20 @@ def get_influx_connection(conf, test_write=False, test_read=False):
     return InfluxClient(databases, write_v1, query_v1, close_v1)
 
 
-def setup(hass, config):
+def _retry_setup(hass: HomeAssistant, config: ConfigType) -> None:
+    setup(hass, config)
+
+
+def setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the InfluxDB component."""
     conf = config[DOMAIN]
     try:
         influx = get_influx_connection(conf, test_write=True)
     except ConnectionError as exc:
         _LOGGER.error(RETRY_MESSAGE, exc)
-        event_helper.call_later(hass, RETRY_INTERVAL, lambda _: setup(hass, config))
+        event_helper.call_later(
+            hass, RETRY_INTERVAL, lambda _: _retry_setup(hass, config)
+        )
         return True
 
     event_to_json = _generate_event_to_json(conf)
@@ -521,7 +541,7 @@ class InfluxThread(threading.Thread):
 
         dropped = 0
 
-        try:
+        with suppress(queue.Empty):
             while len(json) < BATCH_BUFFER_SIZE and not self.shutdown:
                 timeout = None if count == 0 else self.batch_timeout()
                 item = self.queue.get(timeout=timeout)
@@ -539,9 +559,6 @@ class InfluxThread(threading.Thread):
                             json.append(event_json)
                     else:
                         dropped += 1
-
-        except queue.Empty:
-            pass
 
         if dropped:
             _LOGGER.warning(CATCHING_UP_MESSAGE, dropped)

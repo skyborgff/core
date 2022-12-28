@@ -2,8 +2,8 @@
   "domain": "script",
   "name": "Scripts",
   "documentation": "https://www.home-assistant.io/integrations/script",
-  "codeowners": [
-    "@home-assistant/core"
-  ],
-  "quality_scale": "internal"
+  "dependencies": ["blueprint", "trace"],
+  "codeowners": ["@home-assistant/core"],
+  "quality_scale": "internal",
+  "integration_type": "system"
 }

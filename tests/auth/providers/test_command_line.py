@@ -1,6 +1,7 @@
 """Tests for the command_line auth provider."""
 
 import os
+from unittest.mock import AsyncMock
 import uuid
 
 import pytest
@@ -9,8 +10,6 @@ from homeassistant import data_entry_flow
 from homeassistant.auth import AuthManager, auth_store, models as auth_models
 from homeassistant.auth.providers import command_line
 from homeassistant.const import CONF_TYPE
-
-from tests.async_mock import AsyncMock
 
 
 @pytest.fixture
@@ -115,18 +114,18 @@ async def test_login_flow_validates(provider):
     """Test login flow."""
     flow = await provider.async_login_flow({})
     result = await flow.async_step_init()
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
 
     result = await flow.async_step_init(
         {"username": "bad-user", "password": "bad-pass"}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["errors"]["base"] == "invalid_auth"
 
     result = await flow.async_step_init(
         {"username": "good-user", "password": "good-pass"}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result["data"]["username"] == "good-user"
 
 
@@ -136,5 +135,5 @@ async def test_strip_username(provider):
     result = await flow.async_step_init(
         {"username": "\t\ngood-user ", "password": "good-pass"}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
+    assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result["data"]["username"] == "good-user"

@@ -1,5 +1,4 @@
 """Support for Blink Home Camera System."""
-import asyncio
 from copy import deepcopy
 import logging
 
@@ -8,7 +7,13 @@ from blinkpy.blinkpy import Blink
 import voluptuous as vol
 
 from homeassistant.components import persistent_notification
-from homeassistant.components.blink.const import (
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
+from homeassistant.const import CONF_FILENAME, CONF_NAME, CONF_PIN, CONF_SCAN_INTERVAL
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+
+from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     PLATFORMS,
@@ -16,10 +21,6 @@ from homeassistant.components.blink.const import (
     SERVICE_SAVE_VIDEO,
     SERVICE_SEND_PIN,
 )
-from homeassistant.const import CONF_FILENAME, CONF_NAME, CONF_PIN, CONF_SCAN_INTERVAL
-from homeassistant.core import callback
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ SERVICE_SAVE_VIDEO_SCHEMA = vol.Schema(
 SERVICE_SEND_PIN_SCHEMA = vol.Schema({vol.Optional(CONF_PIN): cv.string})
 
 
-def _blink_startup_wrapper(hass, entry):
+def _blink_startup_wrapper(hass: HomeAssistant, entry: ConfigEntry) -> Blink:
     """Startup wrapper for blink."""
     blink = Blink()
     auth_data = deepcopy(dict(entry.data))
@@ -49,36 +50,38 @@ def _reauth_flow_wrapper(hass, data):
     """Reauth flow wrapper."""
     hass.add_job(
         hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "reauth"}, data=data
+            DOMAIN, context={"source": SOURCE_REAUTH}, data=data
         )
     )
     persistent_notification.async_create(
         hass,
-        "Blink configuration migrated to a new version. Please go to the integrations page to re-configure (such as sending a new 2FA key).",
+        (
+            "Blink configuration migrated to a new version. Please go to the"
+            " integrations page to re-configure (such as sending a new 2FA key)."
+        ),
         "Blink Migration",
     )
 
 
-async def async_setup(hass, config):
-    """Set up a Blink component."""
-    hass.data[DOMAIN] = {}
-    return True
-
-
-async def async_migrate_entry(hass, entry):
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Handle migration of a previous version config entry."""
+    _LOGGER.debug("Migrating from version %s", entry.version)
     data = {**entry.data}
     if entry.version == 1:
         data.pop("login_response", None)
         await hass.async_add_executor_job(_reauth_flow_wrapper, hass, data)
         return False
+    if entry.version == 2:
+        await hass.async_add_executor_job(_reauth_flow_wrapper, hass, data)
+        return False
     return True
 
 
-async def async_setup_entry(hass, entry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Blink via config entry."""
-    _async_import_options_from_data_if_missing(hass, entry)
+    hass.data.setdefault(DOMAIN, {})
 
+    _async_import_options_from_data_if_missing(hass, entry)
     hass.data[DOMAIN][entry.entry_id] = await hass.async_add_executor_job(
         _blink_startup_wrapper, hass, entry
     )
@@ -86,10 +89,8 @@ async def async_setup_entry(hass, entry):
     if not hass.data[DOMAIN][entry.entry_id].available:
         raise ConfigEntryNotReady
 
-    for component in PLATFORMS:
-        hass.async_create_task(
-            hass.config_entries.async_forward_entry_setup(entry, component)
-        )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(update_listener))
 
     def blink_refresh(event_time=None):
         """Call blink to refresh info."""
@@ -119,7 +120,9 @@ async def async_setup_entry(hass, entry):
 
 
 @callback
-def _async_import_options_from_data_if_missing(hass, entry):
+def _async_import_options_from_data_if_missing(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
     options = dict(entry.options)
     if CONF_SCAN_INTERVAL not in entry.options:
         options[CONF_SCAN_INTERVAL] = entry.data.get(
@@ -128,16 +131,9 @@ def _async_import_options_from_data_if_missing(hass, entry):
         hass.config_entries.async_update_entry(entry, options=options)
 
 
-async def async_unload_entry(hass, entry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Blink entry."""
-    unload_ok = all(
-        await asyncio.gather(
-            *[
-                hass.config_entries.async_forward_entry_unload(entry, component)
-                for component in PLATFORMS
-            ]
-        )
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if not unload_ok:
         return False
@@ -148,10 +144,16 @@ async def async_unload_entry(hass, entry):
         return True
 
     hass.services.async_remove(DOMAIN, SERVICE_REFRESH)
-    hass.services.async_remove(DOMAIN, SERVICE_SAVE_VIDEO_SCHEMA)
+    hass.services.async_remove(DOMAIN, SERVICE_SAVE_VIDEO)
     hass.services.async_remove(DOMAIN, SERVICE_SEND_PIN)
 
     return True
+
+
+async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    blink: Blink = hass.data[DOMAIN][entry.entry_id]
+    blink.refresh_rate = entry.options[CONF_SCAN_INTERVAL]
 
 
 async def async_handle_save_video_service(hass, entry, call):

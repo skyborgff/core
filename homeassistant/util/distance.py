@@ -1,8 +1,10 @@
 """Distance util functions."""
-from numbers import Number
-from typing import Callable, Dict
+from __future__ import annotations
 
-from homeassistant.const import (
+from collections.abc import Callable
+
+# pylint: disable-next=unused-import,hass-deprecated-import
+from homeassistant.const import (  # noqa: F401
     LENGTH,
     LENGTH_CENTIMETERS,
     LENGTH_FEET,
@@ -14,19 +16,13 @@ from homeassistant.const import (
     LENGTH_YARD,
     UNIT_NOT_RECOGNIZED_TEMPLATE,
 )
+from homeassistant.helpers.frame import report
 
-VALID_UNITS = [
-    LENGTH_KILOMETERS,
-    LENGTH_MILES,
-    LENGTH_FEET,
-    LENGTH_METERS,
-    LENGTH_CENTIMETERS,
-    LENGTH_MILLIMETERS,
-    LENGTH_INCHES,
-    LENGTH_YARD,
-]
+from .unit_conversion import DistanceConverter
 
-TO_METERS: Dict[str, Callable[[float], float]] = {
+VALID_UNITS = DistanceConverter.VALID_UNITS
+
+TO_METERS: dict[str, Callable[[float], float]] = {
     LENGTH_METERS: lambda meters: meters,
     LENGTH_MILES: lambda miles: miles * 1609.344,
     LENGTH_YARD: lambda yards: yards * 0.9144,
@@ -37,7 +33,7 @@ TO_METERS: Dict[str, Callable[[float], float]] = {
     LENGTH_MILLIMETERS: lambda millimeters: millimeters * 0.001,
 }
 
-METERS_TO: Dict[str, Callable[[float], float]] = {
+METERS_TO: dict[str, Callable[[float], float]] = {
     LENGTH_METERS: lambda meters: meters,
     LENGTH_MILES: lambda meters: meters * 0.000621371,
     LENGTH_YARD: lambda meters: meters * 1.09361,
@@ -49,19 +45,14 @@ METERS_TO: Dict[str, Callable[[float], float]] = {
 }
 
 
-def convert(value: float, unit_1: str, unit_2: str) -> float:
+def convert(value: float, from_unit: str, to_unit: str) -> float:
     """Convert one unit of measurement to another."""
-    if unit_1 not in VALID_UNITS:
-        raise ValueError(UNIT_NOT_RECOGNIZED_TEMPLATE.format(unit_1, LENGTH))
-    if unit_2 not in VALID_UNITS:
-        raise ValueError(UNIT_NOT_RECOGNIZED_TEMPLATE.format(unit_2, LENGTH))
-
-    if not isinstance(value, Number):
-        raise TypeError(f"{value} is not of numeric type")
-
-    if unit_1 == unit_2 or unit_1 not in VALID_UNITS:
-        return value
-
-    meters: float = TO_METERS[unit_1](value)
-
-    return METERS_TO[unit_2](meters)
+    report(
+        (
+            "uses distance utility. This is deprecated since 2022.10 and will "
+            "stop working in Home Assistant 2023.4, it should be updated to use "
+            "unit_conversion.DistanceConverter instead"
+        ),
+        error_if_core=False,
+    )
+    return DistanceConverter.convert(value, from_unit, to_unit)

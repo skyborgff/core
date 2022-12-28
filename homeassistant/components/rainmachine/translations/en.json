@@ -6,6 +6,7 @@
         "error": {
             "invalid_auth": "Invalid authentication"
         },
+        "flow_title": "{ip}",
         "step": {
             "user": {
                 "data": {
@@ -21,6 +22,7 @@
         "step": {
             "init": {
                 "data": {
+                    "use_app_run_times": "Use zone run times from RainMachine app",
                     "zone_run_time": "Default zone run time (in seconds)"
                 },
                 "title": "Configure RainMachine"

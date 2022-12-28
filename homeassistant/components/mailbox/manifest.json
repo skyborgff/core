@@ -3,5 +3,7 @@
   "name": "Mailbox",
   "documentation": "https://www.home-assistant.io/integrations/mailbox",
   "dependencies": ["http"],
-  "codeowners": []
+  "codeowners": [],
+  "quality_scale": "internal",
+  "integration_type": "entity"
 }

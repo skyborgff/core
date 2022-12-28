@@ -1,6 +1,8 @@
 """Test Dynalite bridge."""
 
 
+from unittest.mock import AsyncMock, Mock, patch
+
 from dynalite_devices_lib.dynalite_devices import (
     CONF_AREA as dyn_CONF_AREA,
     CONF_PRESET as dyn_CONF_PRESET,
@@ -18,7 +20,6 @@ from homeassistant.components.dynalite.const import (
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from tests.async_mock import AsyncMock, Mock, patch
 from tests.common import MockConfigEntry
 
 
@@ -69,10 +70,12 @@ async def test_add_devices_then_register(hass):
     device1.category = "light"
     device1.name = "NAME"
     device1.unique_id = "unique1"
+    device1.brightness = 1
     device2 = Mock()
     device2.category = "switch"
     device2.name = "NAME2"
     device2.unique_id = "unique2"
+    device2.brightness = 1
     new_device_func([device1, device2])
     device3 = Mock()
     device3.category = "switch"
@@ -102,10 +105,12 @@ async def test_register_then_add_devices(hass):
     device1.category = "light"
     device1.name = "NAME"
     device1.unique_id = "unique1"
+    device1.brightness = 1
     device2 = Mock()
     device2.category = "switch"
     device2.name = "NAME2"
     device2.unique_id = "unique2"
+    device2.brightness = 1
     new_device_func([device1, device2])
     await hass.async_block_till_done()
     assert hass.states.get("light.name")

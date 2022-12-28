@@ -1,5 +1,6 @@
 """Tests for the init module."""
 import asyncio
+from unittest.mock import Mock, patch
 
 from pyheos import CommandFailedError, HeosError, const
 import pytest
@@ -14,12 +15,10 @@ from homeassistant.components.heos.const import (
     DATA_SOURCE_MANAGER,
     DOMAIN,
 )
-from homeassistant.components.media_player.const import DOMAIN as MEDIA_PLAYER_DOMAIN
+from homeassistant.components.media_player import DOMAIN as MEDIA_PLAYER_DOMAIN
 from homeassistant.const import CONF_HOST
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.setup import async_setup_component
-
-from tests.async_mock import Mock, patch
 
 
 async def test_async_setup_creates_entry(hass, config):

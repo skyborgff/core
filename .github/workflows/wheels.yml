@@ -1,0 +1,175 @@
+name: Build wheels
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"
+  push:
+    branches:
+      - dev
+      - rc
+    paths:
+      - "requirements.txt"
+      - "requirements_all.txt"
+
+jobs:
+  init:
+    name: Initialize wheels builder
+    if: github.repository_owner == 'home-assistant'
+    runs-on: ubuntu-latest
+    outputs:
+      architectures: ${{ steps.info.outputs.architectures }}
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v3.2.0
+
+      - name: Get information
+        id: info
+        uses: home-assistant/actions/helpers/info@master
+
+      - name: Create requirements_diff file
+        run: |
+          if [[ ${{ github.event_name }} =~ (schedule|workflow_dispatch) ]]; then
+            touch requirements_diff.txt
+          else
+            curl -s -o requirements_diff.txt https://raw.githubusercontent.com/home-assistant/core/master/requirements.txt
+          fi
+
+      - name: Write env-file
+        run: |
+          (
+            echo "GRPC_BUILD_WITH_BORING_SSL_ASM=false"
+            echo "GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=true"
+            echo "GRPC_PYTHON_BUILD_WITH_CYTHON=true"
+            echo "GRPC_PYTHON_DISABLE_LIBC_COMPATIBILITY=true"
+            # GRPC on armv7 needs -lexecinfo (issue #56669) since home assistant installs
+            # execinfo-dev when building wheels. The setuptools build setup does not have an option for
+            # adding a single LDFLAG so copy all relevant linux flags here (as of 1.43.0)
+            echo "GRPC_PYTHON_LDFLAGS=-lpthread -Wl,-wrap,memcpy -static-libgcc -lexecinfo"
+
+            # Fix out of memory issues with rust
+            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true"
+
+            # OpenCV headless installation
+            echo "CI_BUILD=1"
+            echo "ENABLE_HEADLESS=1"
+          ) > .env_file
+
+      - name: Upload env_file
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: env_file
+          path: ./.env_file
+
+      - name: Upload requirements_diff
+        uses: actions/upload-artifact@v3.1.1
+        with:
+          name: requirements_diff
+          path: ./requirements_diff.txt
+
+  core:
+    name: Build musllinux wheels with musllinux_1_2 / cp310 at ${{ matrix.arch }} for core
+    if: github.repository_owner == 'home-assistant'
+    needs: init
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJson(needs.init.outputs.architectures) }}
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v3.2.0
+
+      - name: Download env_file
+        uses: actions/download-artifact@v3
+        with:
+          name: env_file
+
+      - name: Download requirements_diff
+        uses: actions/download-artifact@v3
+        with:
+          name: requirements_diff
+
+      - name: Build wheels
+        uses: home-assistant/wheels@2022.10.1
+        with:
+          abi: cp310
+          tag: musllinux_1_2
+          arch: ${{ matrix.arch }}
+          wheels-key: ${{ secrets.WHEELS_KEY }}
+          env-file: true
+          apk: "libffi-dev;openssl-dev;yaml-dev"
+          skip-binary: aiohttp
+          constraints: "homeassistant/package_constraints.txt"
+          requirements-diff: "requirements_diff.txt"
+          requirements: "requirements.txt"
+
+  integrations:
+    name: Build musllinux wheels with musllinux_1_2 / cp310 at ${{ matrix.arch }} for integrations
+    if: github.repository_owner == 'home-assistant'
+    needs: init
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJson(needs.init.outputs.architectures) }}
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v3.2.0
+
+      - name: Download env_file
+        uses: actions/download-artifact@v3
+        with:
+          name: env_file
+
+      - name: Download requirements_diff
+        uses: actions/download-artifact@v3
+        with:
+          name: requirements_diff
+
+      - name: Uncomment packages
+        run: |
+          requirement_files="requirements_all.txt requirements_diff.txt"
+          for requirement_file in ${requirement_files}; do
+            sed -i "s|# pybluez|pybluez|g" ${requirement_file}
+            sed -i "s|# beacontools|beacontools|g" ${requirement_file}
+            sed -i "s|# fritzconnection|fritzconnection|g" ${requirement_file}
+            sed -i "s|# pyuserinput|pyuserinput|g" ${requirement_file}
+            sed -i "s|# evdev|evdev|g" ${requirement_file}
+            sed -i "s|# pycups|pycups|g" ${requirement_file}
+            sed -i "s|# homekit|homekit|g" ${requirement_file}
+            sed -i "s|# decora_wifi|decora_wifi|g" ${requirement_file}
+            sed -i "s|# python-gammu|python-gammu|g" ${requirement_file}
+            sed -i "s|# opencv-python-headless|opencv-python-headless|g" ${requirement_file}
+          done
+
+      - name: Adjust build env
+        run: |
+          if [ "${{ matrix.arch }}" = "i386" ]; then
+            echo "NPY_DISABLE_SVML=1" >> .env_file
+          fi
+
+          (
+            # cmake > 3.22.2 have issue on arm
+            # Tested until 3.22.5
+            echo "cmake==3.22.2"
+          ) >> homeassistant/package_constraints.txt
+
+          # Do not pin numpy in wheels building
+          sed -i "/numpy/d" homeassistant/package_constraints.txt
+
+      - name: Build wheels
+        uses: home-assistant/wheels@2022.10.1
+        with:
+          abi: cp310
+          tag: musllinux_1_2
+          arch: ${{ matrix.arch }}
+          wheels-key: ${{ secrets.WHEELS_KEY }}
+          env-file: true
+          apk: "libexecinfo-dev;bluez-dev;libffi-dev;openssl-dev;glib-dev;eudev-dev;libxml2-dev;libxslt-dev;libpng-dev;libjpeg-turbo-dev;tiff-dev;cups-dev;gmp-dev;mpfr-dev;mpc1-dev;ffmpeg-dev;gammu-dev;yaml-dev;openblas-dev;fftw-dev;lapack-dev;gfortran;blas-dev;eigen-dev;freetype-dev;glew-dev;harfbuzz-dev;hdf5-dev;libdc1394-dev;libtbb-dev;mesa-dev;openexr-dev;openjpeg-dev"
+          skip-binary: aiohttp;grpcio
+          legacy: true
+          constraints: "homeassistant/package_constraints.txt"
+          requirements-diff: "requirements_diff.txt"
+          requirements: "requirements_all.txt"

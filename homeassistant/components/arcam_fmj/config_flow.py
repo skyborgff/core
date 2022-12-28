@@ -1,4 +1,7 @@
 """Config flow to configure the Arcam FMJ component."""
+from __future__ import annotations
+
+from typing import Any
 from urllib.parse import urlparse
 
 from arcam.fmj.client import Client, ConnectionFailed
@@ -6,30 +9,33 @@ from arcam.fmj.utils import get_uniqueid_from_host, get_uniqueid_from_udn
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components.ssdp import ATTR_SSDP_LOCATION, ATTR_UPNP_UDN
+from homeassistant.components import ssdp
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DEFAULT_NAME, DEFAULT_PORT, DOMAIN, DOMAIN_DATA_ENTRIES
 
 
-def get_entry_client(hass, entry):
+def get_entry_client(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> Client:
     """Retrieve client associated with a config entry."""
-    return hass.data[DOMAIN_DATA_ENTRIES][entry.entry_id]
+    client: Client = hass.data[DOMAIN_DATA_ENTRIES][entry.entry_id]
+    return client
 
 
-@config_entries.HANDLERS.register(DOMAIN)
-class ArcamFmjFlowHandler(config_entries.ConfigFlow):
+class ArcamFmjFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    async def _async_set_unique_id_and_update(self, host, port, uuid):
+    async def _async_set_unique_id_and_update(
+        self, host: str, port: int, uuid: str
+    ) -> None:
         await self.async_set_unique_id(uuid)
         self._abort_if_unique_id_configured({CONF_HOST: host, CONF_PORT: port})
 
-    async def _async_check_and_create(self, host, port):
+    async def _async_check_and_create(self, host: str, port: int) -> FlowResult:
         client = Client(host, port)
         try:
             await client.start()
@@ -43,9 +49,11 @@ class ArcamFmjFlowHandler(config_entries.ConfigFlow):
             data={CONF_HOST: host, CONF_PORT: port},
         )
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle a discovered device."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             uuid = await get_uniqueid_from_host(
@@ -69,9 +77,11 @@ class ArcamFmjFlowHandler(config_entries.ConfigFlow):
             step_id="user", data_schema=vol.Schema(fields), errors=errors
         )
 
-    async def async_step_confirm(self, user_input=None):
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle user-confirmation of discovered node."""
-        context = self.context  # pylint: disable=no-member
+        context = self.context
         placeholders = {
             "host": context[CONF_HOST],
         }
@@ -86,15 +96,17 @@ class ArcamFmjFlowHandler(config_entries.ConfigFlow):
             step_id="confirm", description_placeholders=placeholders
         )
 
-    async def async_step_ssdp(self, discovery_info):
+    async def async_step_ssdp(self, discovery_info: ssdp.SsdpServiceInfo) -> FlowResult:
         """Handle a discovered device."""
-        host = urlparse(discovery_info[ATTR_SSDP_LOCATION]).hostname
+        host = str(urlparse(discovery_info.ssdp_location).hostname)
         port = DEFAULT_PORT
-        uuid = get_uniqueid_from_udn(discovery_info[ATTR_UPNP_UDN])
+        uuid = get_uniqueid_from_udn(discovery_info.upnp[ssdp.ATTR_UPNP_UDN])
+        if not uuid:
+            return self.async_abort(reason="cannot_connect")
 
         await self._async_set_unique_id_and_update(host, port, uuid)
 
-        context = self.context  # pylint: disable=no-member
+        context = self.context
         context[CONF_HOST] = host
         context[CONF_PORT] = DEFAULT_PORT
         return await self.async_step_confirm()

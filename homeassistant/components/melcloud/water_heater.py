@@ -1,5 +1,7 @@
 """Platform for water_heater integration."""
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import Any
 
 from pymelcloud import DEVICE_TYPE_ATW, AtwDevice
 from pymelcloud.atw_device import (
@@ -9,21 +11,23 @@ from pymelcloud.atw_device import (
 from pymelcloud.device import PROPERTY_POWER
 
 from homeassistant.components.water_heater import (
-    SUPPORT_OPERATION_MODE,
-    SUPPORT_TARGET_TEMPERATURE,
+    DEFAULT_MAX_TEMP,
+    DEFAULT_MIN_TEMP,
     WaterHeaterEntity,
+    WaterHeaterEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import TEMP_CELSIUS
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.const import UnitOfTemperature
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import DOMAIN, MelCloudDevice
 from .const import ATTR_STATUS
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType, entry: ConfigEntry, async_add_entities
-):
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up MelCloud device climate based on config_entry."""
     mel_devices = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
@@ -38,18 +42,23 @@ async def async_setup_entry(
 class AtwWaterHeater(WaterHeaterEntity):
     """Air-to-Water water heater."""
 
+    _attr_supported_features = (
+        WaterHeaterEntityFeature.TARGET_TEMPERATURE
+        | WaterHeaterEntityFeature.OPERATION_MODE
+    )
+
     def __init__(self, api: MelCloudDevice, device: AtwDevice) -> None:
         """Initialize water heater device."""
         self._api = api
         self._device = device
         self._name = device.name
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update state from MELCloud."""
         await self._api.async_update()
 
     @property
-    def unique_id(self) -> Optional[str]:
+    def unique_id(self) -> str | None:
         """Return a unique ID."""
         return f"{self._api.device.serial}"
 
@@ -72,7 +81,7 @@ class AtwWaterHeater(WaterHeaterEntity):
         await self._device.set({PROPERTY_POWER: False})
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the optional state attributes with device specific additions."""
         data = {ATTR_STATUS: self._device.status}
         return data
@@ -80,20 +89,20 @@ class AtwWaterHeater(WaterHeaterEntity):
     @property
     def temperature_unit(self) -> str:
         """Return the unit of measurement used by the platform."""
-        return TEMP_CELSIUS
+        return UnitOfTemperature.CELSIUS
 
     @property
-    def current_operation(self) -> Optional[str]:
+    def current_operation(self) -> str | None:
         """Return current operation as reported by pymelcloud."""
         return self._device.operation_mode
 
     @property
-    def operation_list(self) -> List[str]:
+    def operation_list(self) -> list[str]:
         """Return the list of available operation modes as reported by pymelcloud."""
         return self._device.operation_modes
 
     @property
-    def current_temperature(self) -> Optional[float]:
+    def current_temperature(self) -> float | None:
         """Return the current temperature."""
         return self._device.tank_temperature
 
@@ -102,7 +111,7 @@ class AtwWaterHeater(WaterHeaterEntity):
         """Return the temperature we try to reach."""
         return self._device.target_tank_temperature
 
-    async def async_set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         await self._device.set(
             {
@@ -112,21 +121,16 @@ class AtwWaterHeater(WaterHeaterEntity):
             }
         )
 
-    async def async_set_operation_mode(self, operation_mode):
+    async def async_set_operation_mode(self, operation_mode: str) -> None:
         """Set new target operation mode."""
         await self._device.set({PROPERTY_OPERATION_MODE: operation_mode})
 
     @property
-    def supported_features(self):
-        """Return the list of supported features."""
-        return SUPPORT_TARGET_TEMPERATURE | SUPPORT_OPERATION_MODE
-
-    @property
-    def min_temp(self) -> Optional[float]:
+    def min_temp(self) -> float:
         """Return the minimum temperature."""
-        return self._device.target_tank_temperature_min
+        return self._device.target_tank_temperature_min or DEFAULT_MIN_TEMP
 
     @property
-    def max_temp(self) -> Optional[float]:
+    def max_temp(self) -> float:
         """Return the maximum temperature."""
-        return self._device.target_tank_temperature_max
+        return self._device.target_tank_temperature_max or DEFAULT_MAX_TEMP

@@ -1,17 +1,19 @@
 """Support for the cloud for speech to text service."""
-from typing import List
+from __future__ import annotations
 
 from aiohttp import StreamReader
 from hass_nabucasa import Cloud
 from hass_nabucasa.voice import VoiceError
 
-from homeassistant.components.stt import Provider, SpeechMetadata, SpeechResult
-from homeassistant.components.stt.const import (
+from homeassistant.components.stt import (
     AudioBitRates,
     AudioChannels,
     AudioCodecs,
     AudioFormats,
     AudioSampleRates,
+    Provider,
+    SpeechMetadata,
+    SpeechResult,
     SpeechResultState,
 )
 
@@ -56,32 +58,32 @@ class CloudProvider(Provider):
         self.cloud = cloud
 
     @property
-    def supported_languages(self) -> List[str]:
+    def supported_languages(self) -> list[str]:
         """Return a list of supported languages."""
         return SUPPORT_LANGUAGES
 
     @property
-    def supported_formats(self) -> List[AudioFormats]:
+    def supported_formats(self) -> list[AudioFormats]:
         """Return a list of supported formats."""
         return [AudioFormats.WAV, AudioFormats.OGG]
 
     @property
-    def supported_codecs(self) -> List[AudioCodecs]:
+    def supported_codecs(self) -> list[AudioCodecs]:
         """Return a list of supported codecs."""
         return [AudioCodecs.PCM, AudioCodecs.OPUS]
 
     @property
-    def supported_bit_rates(self) -> List[AudioBitRates]:
+    def supported_bit_rates(self) -> list[AudioBitRates]:
         """Return a list of supported bitrates."""
         return [AudioBitRates.BITRATE_16]
 
     @property
-    def supported_sample_rates(self) -> List[AudioSampleRates]:
+    def supported_sample_rates(self) -> list[AudioSampleRates]:
         """Return a list of supported samplerates."""
         return [AudioSampleRates.SAMPLERATE_16000]
 
     @property
-    def supported_channels(self) -> List[AudioChannels]:
+    def supported_channels(self) -> list[AudioChannels]:
         """Return a list of supported channels."""
         return [AudioChannels.CHANNEL_MONO]
 
@@ -89,7 +91,10 @@ class CloudProvider(Provider):
         self, metadata: SpeechMetadata, stream: StreamReader
     ) -> SpeechResult:
         """Process an audio stream to STT service."""
-        content = f"audio/{metadata.format!s}; codecs=audio/{metadata.codec!s}; samplerate=16000"
+        content = (
+            f"audio/{metadata.format!s}; codecs=audio/{metadata.codec!s};"
+            " samplerate=16000"
+        )
 
         # Process STT
         try:

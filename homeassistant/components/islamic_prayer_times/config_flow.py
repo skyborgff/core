@@ -1,10 +1,11 @@
 """Config flow for Islamic Prayer Times integration."""
+from __future__ import annotations
+
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
 
-# pylint: disable=unused-import
 from .const import CALC_METHODS, CONF_CALC_METHOD, DEFAULT_CALC_METHOD, DOMAIN, NAME
 
 
@@ -12,11 +13,12 @@ class IslamicPrayerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the Islamic Prayer config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> IslamicPrayerOptionsFlowHandler:
         """Get the options flow for this handler."""
         return IslamicPrayerOptionsFlowHandler(config_entry)
 
@@ -30,15 +32,11 @@ class IslamicPrayerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_create_entry(title=NAME, data=user_input)
 
-    async def async_step_import(self, import_config):
-        """Import from config."""
-        return await self.async_step_user(user_input=import_config)
-
 
 class IslamicPrayerOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Islamic Prayer client options."""
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
 

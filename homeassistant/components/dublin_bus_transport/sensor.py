@@ -4,15 +4,21 @@ Support for Dublin RTPI information from data.dublinked.ie.
 For more info on the API see :
 https://data.gov.ie/dataset/real-time-passenger-information-rtpi-for-dublin-bus-bus-eireann-luas-and-irish-rail/resource/4b9f2c4f-6bf5-4958-a43a-f12dab04cf61
 """
+from __future__ import annotations
+
+from contextlib import suppress
 from datetime import datetime, timedelta
+from http import HTTPStatus
 
 import requests
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import ATTR_ATTRIBUTION, CONF_NAME, HTTP_OK, TIME_MINUTES
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
+from homeassistant.const import CONF_NAME, UnitOfTime
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 import homeassistant.util.dt as dt_util
 
 _RESOURCE = "https://data.dublinked.ie/cgi-bin/rtpi/realtimebusinformation"
@@ -22,8 +28,6 @@ ATTR_ROUTE = "Route"
 ATTR_DUE_IN = "Due in"
 ATTR_DUE_AT = "Due at"
 ATTR_NEXT_UP = "Later Bus"
-
-ATTRIBUTION = "Data provided by data.dublinked.ie"
 
 CONF_STOP_ID = "stopid"
 CONF_ROUTE = "route"
@@ -55,7 +59,12 @@ def due_in_minutes(timestamp):
     return str(int(diff.total_seconds() / 60))
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
+def setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the Dublin public transport sensor."""
     name = config[CONF_NAME]
     stop = config[CONF_STOP_ID]
@@ -65,8 +74,10 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities([DublinPublicTransportSensor(data, stop, route, name)], True)
 
 
-class DublinPublicTransportSensor(Entity):
+class DublinPublicTransportSensor(SensorEntity):
     """Implementation of an Dublin public transport sensor."""
+
+    _attr_attribution = "Data provided by data.dublinked.ie"
 
     def __init__(self, data, stop, route, name):
         """Initialize the sensor."""
@@ -82,12 +93,12 @@ class DublinPublicTransportSensor(Entity):
         return self._name
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
         return self._state
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the state attributes."""
         if self._times is not None:
             next_up = "None"
@@ -100,28 +111,25 @@ class DublinPublicTransportSensor(Entity):
                 ATTR_DUE_AT: self._times[0][ATTR_DUE_AT],
                 ATTR_STOP_ID: self._stop,
                 ATTR_ROUTE: self._times[0][ATTR_ROUTE],
-                ATTR_ATTRIBUTION: ATTRIBUTION,
                 ATTR_NEXT_UP: next_up,
             }
 
     @property
-    def unit_of_measurement(self):
+    def native_unit_of_measurement(self):
         """Return the unit this state is expressed in."""
-        return TIME_MINUTES
+        return UnitOfTime.MINUTES
 
     @property
     def icon(self):
         """Icon to use in the frontend, if any."""
         return ICON
 
-    def update(self):
+    def update(self) -> None:
         """Get the latest data from opendata.ch and update the states."""
         self.data.update()
         self._times = self.data.info
-        try:
+        with suppress(TypeError):
             self._state = self._times[0][ATTR_DUE_IN]
-        except TypeError:
-            pass
 
 
 class PublicTransportData:
@@ -146,7 +154,7 @@ class PublicTransportData:
 
         response = requests.get(_RESOURCE, params, timeout=10)
 
-        if response.status_code != HTTP_OK:
+        if response.status_code != HTTPStatus.OK:
             self.info = [
                 {ATTR_DUE_AT: "n/a", ATTR_ROUTE: self.route, ATTR_DUE_IN: "n/a"}
             ]

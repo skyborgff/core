@@ -1,21 +1,24 @@
 """Support for ecobee."""
-import asyncio
 from datetime import timedelta
 
 from pyecobee import ECOBEE_API_KEY, ECOBEE_REFRESH_TOKEN, Ecobee, ExpiredTokenError
 import voluptuous as vol
 
-from homeassistant.config_entries import SOURCE_IMPORT
-from homeassistant.const import CONF_API_KEY
-from homeassistant.helpers import config_validation as cv
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.const import CONF_API_KEY, CONF_NAME, Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv, discovery
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import Throttle
 
 from .const import (
     _LOGGER,
+    ATTR_CONFIG_ENTRY_ID,
     CONF_REFRESH_TOKEN,
     DATA_ECOBEE_CONFIG,
+    DATA_HASS_CONFIG,
     DOMAIN,
-    ECOBEE_PLATFORMS,
+    PLATFORMS,
 )
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=180)
@@ -25,17 +28,19 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """
     Ecobee uses config flow for configuration.
 
     But, an "ecobee:" entry in configuration.yaml will trigger an import flow
     if a config entry doesn't already exist. If ecobee.conf exists, the import
     flow will attempt to import it and create a config entry, to assist users
-    migrating from the old ecobee component. Otherwise, the user will have to
+    migrating from the old ecobee integration. Otherwise, the user will have to
     continue setting up the integration via the config flow.
     """
+
     hass.data[DATA_ECOBEE_CONFIG] = config.get(DOMAIN, {})
+    hass.data[DATA_HASS_CONFIG] = config
 
     if not hass.config_entries.async_entries(DOMAIN) and hass.data[DATA_ECOBEE_CONFIG]:
         # No config entry exists and configuration.yaml config exists, trigger the import flow.
@@ -48,7 +53,7 @@ async def async_setup(hass, config):
     return True
 
 
-async def async_setup_entry(hass, entry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ecobee via a config entry."""
     api_key = entry.data[CONF_API_KEY]
     refresh_token = entry.data[CONF_REFRESH_TOKEN]
@@ -66,10 +71,17 @@ async def async_setup_entry(hass, entry):
 
     hass.data[DOMAIN] = data
 
-    for component in ECOBEE_PLATFORMS:
-        hass.async_create_task(
-            hass.config_entries.async_forward_entry_setup(entry, component)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    hass.async_create_task(
+        discovery.async_load_platform(
+            hass,
+            Platform.NOTIFY,
+            DOMAIN,
+            {CONF_NAME: entry.title, ATTR_CONFIG_ENTRY_ID: entry.entry_id},
+            hass.data[DATA_HASS_CONFIG],
         )
+    )
 
     return True
 
@@ -115,14 +127,9 @@ class EcobeeData:
         return False
 
 
-async def async_unload_entry(hass, config_entry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the config entry and platforms."""
-    hass.data.pop(DOMAIN)
-
-    tasks = []
-    for platform in ECOBEE_PLATFORMS:
-        tasks.append(
-            hass.config_entries.async_forward_entry_unload(config_entry, platform)
-        )
-
-    return all(await asyncio.gather(*tasks))
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data.pop(DOMAIN)
+    return unload_ok

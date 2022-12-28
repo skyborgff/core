@@ -1,14 +1,17 @@
 """Support for One-Time Password (OTP)."""
+from __future__ import annotations
+
 import time
 
 import pyotp
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import CONF_NAME, CONF_TOKEN
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 DEFAULT_NAME = "OTP Sensor"
 
@@ -24,18 +27,24 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    async_add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the OTP sensor."""
     name = config.get(CONF_NAME)
     token = config.get(CONF_TOKEN)
 
     async_add_entities([TOTPSensor(name, token)], True)
-    return True
 
 
 # Only TOTP supported at the moment, HOTP might be added later
-class TOTPSensor(Entity):
+class TOTPSensor(SensorEntity):
     """Representation of a TOTP sensor."""
+
+    _attr_should_poll = False
 
     def __init__(self, name, token):
         """Initialize the sensor."""
@@ -44,7 +53,7 @@ class TOTPSensor(Entity):
         self._state = None
         self._next_expiration = None
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Handle when an entity is about to be added to Home Assistant."""
         self._call_loop()
 
@@ -64,14 +73,9 @@ class TOTPSensor(Entity):
         return self._name
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
         return self._state
-
-    @property
-    def should_poll(self):
-        """No polling needed."""
-        return False
 
     @property
     def icon(self):

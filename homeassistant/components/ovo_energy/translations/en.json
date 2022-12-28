@@ -5,7 +5,7 @@
             "cannot_connect": "Failed to connect",
             "invalid_auth": "Invalid authentication"
         },
-        "flow_title": "OVO Energy: {username}",
+        "flow_title": "{username}",
         "step": {
             "reauth": {
                 "data": {
@@ -16,6 +16,7 @@
             },
             "user": {
                 "data": {
+                    "account": "OVO account id (only add if you have multiple accounts)",
                     "password": "Password",
                     "username": "Username"
                 },

@@ -14,8 +14,10 @@ from homeassistant.components.light import (
     ATTR_KELVIN,
     ATTR_PROFILE,
     ATTR_RGB_COLOR,
+    ATTR_RGBW_COLOR,
+    ATTR_RGBWW_COLOR,
     ATTR_TRANSITION,
-    ATTR_WHITE_VALUE,
+    ATTR_WHITE,
     ATTR_XY_COLOR,
     DOMAIN,
 )
@@ -37,15 +39,17 @@ def turn_on(
     brightness=None,
     brightness_pct=None,
     rgb_color=None,
+    rgbw_color=None,
+    rgbww_color=None,
     xy_color=None,
     hs_color=None,
     color_temp=None,
     kelvin=None,
-    white_value=None,
     profile=None,
     flash=None,
     effect=None,
     color_name=None,
+    white=None,
 ):
     """Turn all or specified light on."""
     hass.add_job(
@@ -56,15 +60,17 @@ def turn_on(
         brightness,
         brightness_pct,
         rgb_color,
+        rgbw_color,
+        rgbww_color,
         xy_color,
         hs_color,
         color_temp,
         kelvin,
-        white_value,
         profile,
         flash,
         effect,
         color_name,
+        white,
     )
 
 
@@ -75,15 +81,17 @@ async def async_turn_on(
     brightness=None,
     brightness_pct=None,
     rgb_color=None,
+    rgbw_color=None,
+    rgbww_color=None,
     xy_color=None,
     hs_color=None,
     color_temp=None,
     kelvin=None,
-    white_value=None,
     profile=None,
     flash=None,
     effect=None,
     color_name=None,
+    white=None,
 ):
     """Turn all or specified light on."""
     data = {
@@ -95,14 +103,16 @@ async def async_turn_on(
             (ATTR_BRIGHTNESS, brightness),
             (ATTR_BRIGHTNESS_PCT, brightness_pct),
             (ATTR_RGB_COLOR, rgb_color),
+            (ATTR_RGBW_COLOR, rgbw_color),
+            (ATTR_RGBWW_COLOR, rgbww_color),
             (ATTR_XY_COLOR, xy_color),
             (ATTR_HS_COLOR, hs_color),
             (ATTR_COLOR_TEMP, color_temp),
             (ATTR_KELVIN, kelvin),
-            (ATTR_WHITE_VALUE, white_value),
             (ATTR_FLASH, flash),
             (ATTR_EFFECT, effect),
             (ATTR_COLOR_NAME, color_name),
+            (ATTR_WHITE, white),
         ]
         if value is not None
     }
@@ -111,16 +121,20 @@ async def async_turn_on(
 
 
 @bind_hass
-def turn_off(hass, entity_id=ENTITY_MATCH_ALL, transition=None):
+def turn_off(hass, entity_id=ENTITY_MATCH_ALL, transition=None, flash=None):
     """Turn all or specified light off."""
-    hass.add_job(async_turn_off, hass, entity_id, transition)
+    hass.add_job(async_turn_off, hass, entity_id, transition, flash)
 
 
-async def async_turn_off(hass, entity_id=ENTITY_MATCH_ALL, transition=None):
+async def async_turn_off(hass, entity_id=ENTITY_MATCH_ALL, transition=None, flash=None):
     """Turn all or specified light off."""
     data = {
         key: value
-        for key, value in [(ATTR_ENTITY_ID, entity_id), (ATTR_TRANSITION, transition)]
+        for key, value in [
+            (ATTR_ENTITY_ID, entity_id),
+            (ATTR_TRANSITION, transition),
+            (ATTR_FLASH, flash),
+        ]
         if value is not None
     }
 
@@ -139,7 +153,6 @@ def toggle(
     hs_color=None,
     color_temp=None,
     kelvin=None,
-    white_value=None,
     profile=None,
     flash=None,
     effect=None,
@@ -158,7 +171,6 @@ def toggle(
         hs_color,
         color_temp,
         kelvin,
-        white_value,
         profile,
         flash,
         effect,
@@ -177,7 +189,6 @@ async def async_toggle(
     hs_color=None,
     color_temp=None,
     kelvin=None,
-    white_value=None,
     profile=None,
     flash=None,
     effect=None,
@@ -197,7 +208,6 @@ async def async_toggle(
             (ATTR_HS_COLOR, hs_color),
             (ATTR_COLOR_TEMP, color_temp),
             (ATTR_KELVIN, kelvin),
-            (ATTR_WHITE_VALUE, white_value),
             (ATTR_FLASH, flash),
             (ATTR_EFFECT, effect),
             (ATTR_COLOR_NAME, color_name),

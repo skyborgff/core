@@ -6,9 +6,9 @@
         "step": {
             "user": {
                 "data": {
-                    "advertise_ip": "IP Adresse annoncieren",
+                    "advertise_ip": "IP-Adresse ank\u00fcndigen",
                     "advertise_port": "Port annoncieren",
-                    "host_ip": "Host-IP",
+                    "host_ip": "Host-IP-Adresse",
                     "listen_port": "Listen-Port",
                     "name": "Name",
                     "upnp_bind_multicast": "Multicast binden (True/False)"

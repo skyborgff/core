@@ -4,68 +4,41 @@ import logging
 
 from prayer_times_calculator import PrayerTimesCalculator, exceptions
 from requests.exceptions import ConnectionError as ConnError
-import voluptuous as vol
 
-from homeassistant.config_entries import SOURCE_IMPORT
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_point_in_time
 import homeassistant.util.dt as dt_util
 
-from .const import (
-    CALC_METHODS,
-    CONF_CALC_METHOD,
-    DATA_UPDATED,
-    DEFAULT_CALC_METHOD,
-    DOMAIN,
-)
+from .const import CONF_CALC_METHOD, DATA_UPDATED, DEFAULT_CALC_METHOD, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+PLATFORMS = [Platform.SENSOR]
 
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: {
-            vol.Optional(CONF_CALC_METHOD, default=DEFAULT_CALC_METHOD): vol.In(
-                CALC_METHODS
-            ),
-        }
-    },
-    extra=vol.ALLOW_EXTRA,
-)
+CONFIG_SCHEMA = cv.removed(DOMAIN, raise_if_present=False)
 
 
-async def async_setup(hass, config):
-    """Import the Islamic Prayer component from config."""
-    if DOMAIN in config:
-        hass.async_create_task(
-            hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": SOURCE_IMPORT}, data=config[DOMAIN]
-            )
-        )
-
-    return True
-
-
-async def async_setup_entry(hass, config_entry):
+async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up the Islamic Prayer Component."""
     client = IslamicPrayerClient(hass, config_entry)
 
-    if not await client.async_setup():
-        return False
+    await client.async_setup()
 
     hass.data.setdefault(DOMAIN, client)
     return True
 
 
-async def async_unload_entry(hass, config_entry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload Islamic Prayer entry from config_entry."""
     if hass.data[DOMAIN].event_unsub:
         hass.data[DOMAIN].event_unsub()
     hass.data.pop(DOMAIN)
-    await hass.config_entries.async_forward_entry_unload(config_entry, "sensor")
-
-    return True
+    return await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
 
 
 class IslamicPrayerClient:
@@ -132,11 +105,13 @@ class IslamicPrayerClient:
         if now > dt_util.as_utc(midnight_dt):
             next_update_at = midnight_dt + timedelta(days=1, minutes=1)
             _LOGGER.debug(
-                "Midnight is after day the changes so schedule update for after Midnight the next day"
+                "Midnight is after day the changes so schedule update for after"
+                " Midnight the next day"
             )
         else:
             _LOGGER.debug(
-                "Midnight is before the day changes so schedule update for the next start of day"
+                "Midnight is before the day changes so schedule update for the next"
+                " start of day"
             )
             next_update_at = dt_util.start_of_local_day(now + timedelta(days=1))
 
@@ -180,11 +155,7 @@ class IslamicPrayerClient:
         await self.async_update()
         self.config_entry.add_update_listener(self.async_options_updated)
 
-        self.hass.async_create_task(
-            self.hass.config_entries.async_forward_entry_setup(
-                self.config_entry, "sensor"
-            )
-        )
+        self.hass.config_entries.async_setup_platforms(self.config_entry, PLATFORMS)
 
         return True
 
@@ -199,7 +170,7 @@ class IslamicPrayerClient:
             )
 
     @staticmethod
-    async def async_options_updated(hass, entry):
+    async def async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Triggered by config entry options updates."""
         if hass.data[DOMAIN].event_unsub:
             hass.data[DOMAIN].event_unsub()

@@ -1,0 +1,68 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_account%]",
+      "kamereon_no_account": "Unable to find Kamereon account",
+      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+    },
+    "error": {
+      "invalid_credentials": "[%key:common::config_flow::error::invalid_auth%]"
+    },
+    "step": {
+      "kamereon": {
+        "data": {
+          "kamereon_account_id": "Kamereon account id"
+        },
+        "title": "Select Kamereon account id"
+      },
+      "reauth_confirm": {
+        "data": {
+          "password": "[%key:common::config_flow::data::password%]"
+        },
+        "description": "Please update your password for {username}",
+        "title": "[%key:common::config_flow::title::reauth%]"
+      },
+      "user": {
+        "data": {
+          "locale": "Locale",
+          "username": "[%key:common::config_flow::data::email%]",
+          "password": "[%key:common::config_flow::data::password%]"
+        },
+        "title": "Set Renault credentials"
+      }
+    }
+  },
+  "entity": {
+    "select": {
+      "charge_mode": {
+        "state": {
+          "always": "Instant",
+          "always_charging": "Instant",
+          "schedule_mode": "Planner"
+        }
+      }
+    },
+    "sensor": {
+      "plug_state": {
+        "state": {
+          "unplugged": "Unplugged",
+          "plugged": "Plugged in",
+          "plug_error": "Plug error",
+          "plug_unknown": "Plug unknown"
+        }
+      },
+      "charge_state": {
+        "state": {
+          "not_in_charge": "Not charging",
+          "waiting_for_a_planned_charge": "Waiting for planned charge",
+          "charge_ended": "Charge ended",
+          "waiting_for_current_charge": "Waiting for current charge",
+          "energy_flap_opened": "Energy flap opened",
+          "charge_in_progress": "Charging",
+          "charge_error": "Not charging or plugged in",
+          "unavailable": "Unavailable"
+        }
+      }
+    }
+  }
+}

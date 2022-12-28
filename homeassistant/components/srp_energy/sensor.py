@@ -5,8 +5,15 @@ import logging
 import async_timeout
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 
-from homeassistant.const import ATTR_ATTRIBUTION, ENERGY_KILO_WATT_HOUR
-from homeassistant.helpers import entity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfEnergy
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -22,7 +29,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up the SRP Energy Usage sensor."""
     # API object stored here by __init__.py
     is_time_of_use = False
@@ -40,7 +49,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             # Fetch srp_energy data
             start_date = datetime.now() + timedelta(days=-1)
             end_date = datetime.now()
-            with async_timeout.timeout(10):
+            async with async_timeout.timeout(10):
                 hourly_usage = await hass.async_add_executor_job(
                     api.usage,
                     start_date,
@@ -71,15 +80,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities([SrpEntity(coordinator)])
 
 
-class SrpEntity(entity.Entity):
+class SrpEntity(SensorEntity):
     """Implementation of a Srp Energy Usage sensor."""
+
+    _attr_attribution = ATTRIBUTION
+    _attr_should_poll = False
 
     def __init__(self, coordinator):
         """Initialize the SrpEntity class."""
         self._name = SENSOR_NAME
         self.type = SENSOR_TYPE
         self.coordinator = coordinator
-        self._unit_of_measurement = ENERGY_KILO_WATT_HOUR
+        self._unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._state = None
 
     @property
@@ -93,14 +105,14 @@ class SrpEntity(entity.Entity):
         return self.type
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the device."""
         if self._state:
             return f"{self._state:.2f}"
         return None
 
     @property
-    def unit_of_measurement(self):
+    def native_unit_of_measurement(self):
         """Return the unit of measurement of this entity, if any."""
         return self._unit_of_measurement
 
@@ -117,27 +129,21 @@ class SrpEntity(entity.Entity):
         return None
 
     @property
-    def should_poll(self):
-        """No need to poll. Coordinator notifies entity of updates."""
-        return False
-
-    @property
-    def device_state_attributes(self):
-        """Return the state attributes."""
-        if not self.coordinator.data:
-            return None
-        attributes = {
-            ATTR_ATTRIBUTION: ATTRIBUTION,
-        }
-
-        return attributes
-
-    @property
     def available(self):
         """Return if entity is available."""
         return self.coordinator.last_update_success
 
-    async def async_added_to_hass(self):
+    @property
+    def device_class(self):
+        """Return the device class."""
+        return SensorDeviceClass.ENERGY
+
+    @property
+    def state_class(self):
+        """Return the state class."""
+        return SensorStateClass.TOTAL_INCREASING
+
+    async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self.async_on_remove(
             self.coordinator.async_add_listener(self.async_write_ha_state)
@@ -145,7 +151,7 @@ class SrpEntity(entity.Entity):
         if self.coordinator.data:
             self._state = self.coordinator.data
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.

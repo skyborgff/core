@@ -6,10 +6,7 @@ from nacl.encoding import Base64Encoder
 from nacl.secret import SecretBox
 
 from homeassistant.components import zone as zone_comp
-from homeassistant.components.device_tracker import (
-    SOURCE_TYPE_BLUETOOTH_LE,
-    SOURCE_TYPE_GPS,
-)
+from homeassistant.components.device_tracker import SourceType
 from homeassistant.const import ATTR_LATITUDE, ATTR_LONGITUDE, STATE_HOME
 from homeassistant.util import decorator, slugify
 
@@ -17,7 +14,7 @@ from .helper import supports_encryption
 
 _LOGGER = logging.getLogger(__name__)
 
-HANDLERS = decorator.Registry()
+HANDLERS = decorator.Registry()  # type: ignore[var-annotated]
 
 
 def get_cipher():
@@ -84,9 +81,9 @@ def _parse_see_args(message, subscribe_topic):
         kwargs["attributes"]["battery_status"] = message["bs"]
     if "t" in message:
         if message["t"] in ("c", "u"):
-            kwargs["source_type"] = SOURCE_TYPE_GPS
+            kwargs["source_type"] = SourceType.GPS
         if message["t"] == "b":
-            kwargs["source_type"] = SOURCE_TYPE_BLUETOOTH_LE
+            kwargs["source_type"] = SourceType.BLUETOOTH_LE
 
     return dev_id, kwargs
 
@@ -141,7 +138,10 @@ def _decrypt_payload(secret, topic, ciphertext):
         return message
     except ValueError:
         _LOGGER.warning(
-            "Ignoring encrypted payload because unable to decrypt using key for topic %s",
+            (
+                "Ignoring encrypted payload because unable to decrypt using key for"
+                " topic %s"
+            ),
             topic,
         )
         return None
@@ -159,7 +159,7 @@ def encrypt_message(secret, topic, message):
 
     if key is None:
         _LOGGER.warning(
-            "Unable to encrypt payload because no decryption key known " "for topic %s",
+            "Unable to encrypt payload because no decryption key known for topic %s",
             topic,
         )
         return None
@@ -304,7 +304,7 @@ async def async_handle_waypoint(hass, name_base, waypoint):
     if hass.states.get(entity_id) is not None:
         return
 
-    zone = zone_comp.Zone(
+    zone = zone_comp.Zone.from_yaml(
         {
             zone_comp.CONF_NAME: pretty_name,
             zone_comp.CONF_LATITUDE: lat,
@@ -313,7 +313,6 @@ async def async_handle_waypoint(hass, name_base, waypoint):
             zone_comp.CONF_ICON: zone_comp.ICON_IMPORT,
             zone_comp.CONF_PASSIVE: False,
         },
-        False,
     )
     zone.hass = hass
     zone.entity_id = entity_id

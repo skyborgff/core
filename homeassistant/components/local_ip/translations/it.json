@@ -5,10 +5,7 @@
         },
         "step": {
             "user": {
-                "data": {
-                    "name": "Nome del sensore"
-                },
-                "description": "Vuoi iniziare la configurazione?",
+                "description": "Vuoi avviare la configurazione?",
                 "title": "Indirizzo IP locale"
             }
         }

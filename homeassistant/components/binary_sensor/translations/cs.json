@@ -17,6 +17,7 @@
             "is_no_problem": "{entity_name} nehl\u00e1s\u00ed probl\u00e9m",
             "is_no_smoke": "{entity_name} nedetekuje kou\u0159",
             "is_no_sound": "{entity_name} nedetekuje zvuk",
+            "is_no_update": "{entity_name} je aktu\u00e1ln\u00ed",
             "is_no_vibration": "{entity_name} nedetekuje vibrace",
             "is_not_bat_low": "{entity_name} baterie v norm\u00e1lu",
             "is_not_cold": "{entity_name} nen\u00ed studen\u00fd",
@@ -30,6 +31,7 @@
             "is_not_plugged_in": "{entity_name} je odpojeno",
             "is_not_powered": "{entity_name} nen\u00ed nap\u00e1jeno",
             "is_not_present": "{entity_name} nen\u00ed p\u0159\u00edtomno",
+            "is_not_running": "{entity_name} nen\u00ed spu\u0161t\u011bno",
             "is_not_unsafe": "{entity_name} je bezpe\u010dno",
             "is_occupied": "{entity_name} je obsazeno",
             "is_off": "{entity_name} je vypnuto",
@@ -39,13 +41,16 @@
             "is_powered": "{entity_name} nap\u00e1jeno",
             "is_present": "{entity_name} p\u0159\u00edtomno",
             "is_problem": "{entity_name} detekuje probl\u00e9m",
+            "is_running": "{entity_name} je spu\u0161t\u011bno",
             "is_smoke": "{entity_name} detekuje kou\u0159",
             "is_sound": "{entity_name} detekuje zvuk",
             "is_unsafe": "{entity_name} nen\u00ed bezpe\u010dno",
+            "is_update": "{entity_name} m\u00e1 k dispozici aktualizaci",
             "is_vibration": "{entity_name} detekuje vibrace"
         },
         "trigger_type": {
             "bat_low": "{entity_name} vybit\u00e1 baterie",
+            "co": "{entity_name} za\u010dalo detekovat oxid uhelnat\u00fd",
             "cold": "{entity_name} vychladlo",
             "connected": "{entity_name} p\u0159ipojeno",
             "gas": "{entity_name} za\u010dalo detekovat plyn",
@@ -55,12 +60,14 @@
             "moist": "{entity_name} zvlhnul",
             "motion": "{entity_name} za\u010dalo detekovat pohyb",
             "moving": "{entity_name} se za\u010dal pohybovat",
+            "no_co": "{entity_name} p\u0159estalo detekovat oxid uhelnat\u00fd",
             "no_gas": "{entity_name} p\u0159estalo detekovat plyn",
             "no_light": "{entity_name} p\u0159estalo detekovat sv\u011btlo",
             "no_motion": "{entity_name} p\u0159estalo detekovat pohyb",
             "no_problem": "{entity_name} p\u0159estalo detekovat probl\u00e9m",
             "no_smoke": "{entity_name} p\u0159estalo detekovat kou\u0159",
             "no_sound": "{entity_name} p\u0159estalo detekovat zvuk",
+            "no_update": "{entity_name} se stalo aktu\u00e1ln\u00ed",
             "no_vibration": "{entity_name} p\u0159estalo detekovat vibrace",
             "not_bat_low": "{entity_name} baterie v norm\u00e1lu",
             "not_cold": "{entity_name} p\u0159estal b\u00fdt studen\u00fd",
@@ -74,6 +81,8 @@
             "not_plugged_in": "{entity_name} odpojeno",
             "not_powered": "{entity_name} nen\u00ed nap\u00e1jeno",
             "not_present": "{entity_name} nep\u0159\u00edtomno",
+            "not_running": "{entity_name} u\u017e neb\u011b\u017e\u00ed",
+            "not_tampered": "{entity_name} p\u0159estalo detekovat neopr\u00e1vn\u011bnou manipulaci",
             "not_unsafe": "{entity_name} bezpe\u010dno",
             "occupied": "{entity_name} obsazeno",
             "opened": "{entity_name} otev\u0159eno",
@@ -81,13 +90,20 @@
             "powered": "{entity_name} nap\u00e1jeno",
             "present": "{entity_name} p\u0159\u00edtomno",
             "problem": "{entity_name} za\u010dalo detekovat probl\u00e9m",
+            "running": "{entity_name} spu\u0161t\u011bno",
             "smoke": "{entity_name} za\u010dalo detekovat kou\u0159",
             "sound": "{entity_name} za\u010dalo detekovat zvuk",
+            "tampered": "{entity_name} za\u010dalo detekovat neopr\u00e1vn\u011bnou manipulaci",
             "turned_off": "{entity_name} vypnuto",
             "turned_on": "{entity_name} zapnuto",
             "unsafe": "{entity_name} hl\u00e1s\u00ed ohro\u017een\u00ed",
+            "update": "{entity_name} m\u00e1 k dispozici aktualizaci",
             "vibration": "{entity_name} za\u010dalo detekovat vibrace"
         }
+    },
+    "device_class": {
+        "gas": "plyn",
+        "sound": "zvuk"
     },
     "state": {
         "_": {
@@ -101,6 +117,10 @@
         "battery_charging": {
             "off": "Nenab\u00edj\u00ed se",
             "on": "Nab\u00edjen\u00ed"
+        },
+        "carbon_monoxide": {
+            "off": "\u017d\u00e1dn\u00fd plyn",
+            "on": "Zji\u0161t\u011bn plyn"
         },
         "cold": {
             "off": "Norm\u00e1ln\u00ed",
@@ -166,6 +186,10 @@
             "off": "V po\u0159\u00e1dku",
             "on": "Probl\u00e9m"
         },
+        "running": {
+            "off": "Nen\u00ed spu\u0161t\u011bno",
+            "on": "Spu\u0161t\u011bno"
+        },
         "safety": {
             "off": "Zaji\u0161t\u011bno",
             "on": "Nezaji\u0161t\u011bno"
@@ -177,6 +201,10 @@
         "sound": {
             "off": "Ticho",
             "on": "Zachycen zvuk"
+        },
+        "update": {
+            "off": "Aktu\u00e1ln\u00ed",
+            "on": "Aktualizace k dispozici"
         },
         "vibration": {
             "off": "Klid",

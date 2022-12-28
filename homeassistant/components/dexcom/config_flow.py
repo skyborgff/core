@@ -1,4 +1,6 @@
 """Config flow for Dexcom integration."""
+from __future__ import annotations
+
 from pydexcom import AccountError, Dexcom, SessionError
 import voluptuous as vol
 
@@ -6,14 +8,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_UNIT_OF_MEASUREMENT, CONF_USERNAME
 from homeassistant.core import callback
 
-from .const import (  # pylint:disable=unused-import
-    CONF_SERVER,
-    DOMAIN,
-    MG_DL,
-    MMOL_L,
-    SERVER_OUS,
-    SERVER_US,
-)
+from .const import CONF_SERVER, DOMAIN, MG_DL, MMOL_L, SERVER_OUS, SERVER_US
 
 DATA_SCHEMA = vol.Schema(
     {
@@ -28,7 +23,6 @@ class DexcomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Dexcom."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
@@ -61,7 +55,9 @@ class DexcomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> DexcomOptionsFlowHandler:
         """Get the options flow for this handler."""
         return DexcomOptionsFlowHandler(config_entry)
 
@@ -69,7 +65,7 @@ class DexcomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class DexcomOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle a option flow for Dexcom."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
 

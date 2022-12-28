@@ -2,6 +2,7 @@
     "config": {
         "abort": {
             "addr_in_use": "Server port already in use.",
+            "already_configured": "Server port is already configured.",
             "start_server_failed": "Start server failed."
         },
         "step": {
@@ -9,7 +10,7 @@
                 "data": {
                     "port": "Port"
                 },
-                "title": "Setup TCP server for WIFFI devices"
+                "title": "Set up TCP server for WIFFI devices"
             }
         }
     },

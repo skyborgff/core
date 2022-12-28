@@ -12,7 +12,7 @@
         "error": {
             "already_configured": "Konto jest ju\u017c skonfigurowane"
         },
-        "flow_title": "Withings: {profile}",
+        "flow_title": "{profile}",
         "step": {
             "pick_implementation": {
                 "title": "Wybierz metod\u0119 uwierzytelniania"
@@ -24,7 +24,7 @@
                 "description": "Podaj unikaln\u0105 nazw\u0119 profilu. Zwykle jest to nazwa profilu wybranego w poprzednim kroku.",
                 "title": "Profil u\u017cytkownika"
             },
-            "reauth": {
+            "reauth_confirm": {
                 "description": "Profil \"{profile}\" musi zosta\u0107 ponownie uwierzytelniony, aby nadal otrzymywa\u0107 dane Withings.",
                 "title": "Ponownie uwierzytelnij integracj\u0119"
             }

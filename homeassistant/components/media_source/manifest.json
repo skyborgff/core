@@ -3,5 +3,7 @@
   "name": "Media Source",
   "documentation": "https://www.home-assistant.io/integrations/media_source",
   "dependencies": ["http"],
-  "codeowners": ["@hunterjm"]
+  "codeowners": ["@hunterjm"],
+  "quality_scale": "internal",
+  "integration_type": "system"
 }

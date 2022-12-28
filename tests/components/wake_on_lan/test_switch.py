@@ -1,10 +1,10 @@
 """The tests for the wake on lan switch platform."""
-import platform
+from __future__ import annotations
+
 import subprocess
+from unittest.mock import AsyncMock, patch
 
-import pytest
-
-import homeassistant.components.switch as switch
+from homeassistant.components import switch
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -12,20 +12,15 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
-from tests.async_mock import patch
 from tests.common import async_mock_service
 
 
-@pytest.fixture(autouse=True)
-def mock_send_magic_packet():
-    """Mock magic packet."""
-    with patch("wakeonlan.send_magic_packet") as mock_send:
-        yield mock_send
-
-
-async def test_valid_hostname(hass):
+async def test_valid_hostname(
+    hass: HomeAssistant, mock_send_magic_packet: AsyncMock
+) -> None:
     """Test with valid hostname."""
     assert await async_setup_component(
         hass,
@@ -41,7 +36,7 @@ async def test_valid_hostname(hass):
     await hass.async_block_till_done()
 
     state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
+    assert state.state == STATE_OFF
 
     with patch.object(subprocess, "call", return_value=0):
 
@@ -53,7 +48,7 @@ async def test_valid_hostname(hass):
         )
 
         state = hass.states.get("switch.wake_on_lan")
-        assert STATE_ON == state.state
+        assert state.state == STATE_ON
 
         await hass.services.async_call(
             switch.DOMAIN,
@@ -63,42 +58,12 @@ async def test_valid_hostname(hass):
         )
 
         state = hass.states.get("switch.wake_on_lan")
-        assert STATE_ON == state.state
+        assert state.state == STATE_ON
 
 
-async def test_valid_hostname_windows(hass):
-    """Test with valid hostname on windows."""
-    assert await async_setup_component(
-        hass,
-        switch.DOMAIN,
-        {
-            "switch": {
-                "platform": "wake_on_lan",
-                "mac": "00-01-02-03-04-05",
-                "host": "validhostname",
-            }
-        },
-    )
-    await hass.async_block_till_done()
-
-    state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
-
-    with patch.object(subprocess, "call", return_value=0), patch.object(
-        platform, "system", return_value="Windows"
-    ):
-        await hass.services.async_call(
-            switch.DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: "switch.wake_on_lan"},
-            blocking=True,
-        )
-
-    state = hass.states.get("switch.wake_on_lan")
-    assert STATE_ON == state.state
-
-
-async def test_broadcast_config_ip_and_port(hass, mock_send_magic_packet):
+async def test_broadcast_config_ip_and_port(
+    hass: HomeAssistant, mock_send_magic_packet: AsyncMock
+) -> None:
     """Test with broadcast address and broadcast port config."""
     mac = "00-01-02-03-04-05"
     broadcast_address = "255.255.255.255"
@@ -119,7 +84,7 @@ async def test_broadcast_config_ip_and_port(hass, mock_send_magic_packet):
     await hass.async_block_till_done()
 
     state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
+    assert state.state == STATE_OFF
 
     with patch.object(subprocess, "call", return_value=0):
 
@@ -135,7 +100,9 @@ async def test_broadcast_config_ip_and_port(hass, mock_send_magic_packet):
         )
 
 
-async def test_broadcast_config_ip(hass, mock_send_magic_packet):
+async def test_broadcast_config_ip(
+    hass: HomeAssistant, mock_send_magic_packet: AsyncMock
+) -> None:
     """Test with only broadcast address."""
 
     mac = "00-01-02-03-04-05"
@@ -155,7 +122,7 @@ async def test_broadcast_config_ip(hass, mock_send_magic_packet):
     await hass.async_block_till_done()
 
     state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
+    assert state.state == STATE_OFF
 
     with patch.object(subprocess, "call", return_value=0):
 
@@ -169,7 +136,9 @@ async def test_broadcast_config_ip(hass, mock_send_magic_packet):
         mock_send_magic_packet.assert_called_with(mac, ip_address=broadcast_address)
 
 
-async def test_broadcast_config_port(hass, mock_send_magic_packet):
+async def test_broadcast_config_port(
+    hass: HomeAssistant, mock_send_magic_packet: AsyncMock
+) -> None:
     """Test with only broadcast port config."""
 
     mac = "00-01-02-03-04-05"
@@ -183,7 +152,7 @@ async def test_broadcast_config_port(hass, mock_send_magic_packet):
     await hass.async_block_till_done()
 
     state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
+    assert state.state == STATE_OFF
 
     with patch.object(subprocess, "call", return_value=0):
 
@@ -197,7 +166,9 @@ async def test_broadcast_config_port(hass, mock_send_magic_packet):
         mock_send_magic_packet.assert_called_with(mac, port=port)
 
 
-async def test_off_script(hass):
+async def test_off_script(
+    hass: HomeAssistant, mock_send_magic_packet: AsyncMock
+) -> None:
     """Test with turn off script."""
 
     assert await async_setup_component(
@@ -216,7 +187,7 @@ async def test_off_script(hass):
     calls = async_mock_service(hass, "shell_command", "turn_off_target")
 
     state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
+    assert state.state == STATE_OFF
 
     with patch.object(subprocess, "call", return_value=0):
 
@@ -228,7 +199,7 @@ async def test_off_script(hass):
         )
 
         state = hass.states.get("switch.wake_on_lan")
-        assert STATE_ON == state.state
+        assert state.state == STATE_ON
         assert len(calls) == 0
 
     with patch.object(subprocess, "call", return_value=2):
@@ -241,12 +212,14 @@ async def test_off_script(hass):
         )
 
         state = hass.states.get("switch.wake_on_lan")
-        assert STATE_OFF == state.state
+        assert state.state == STATE_OFF
         assert len(calls) == 1
 
 
-async def test_invalid_hostname_windows(hass):
-    """Test with invalid hostname on windows."""
+async def test_no_hostname_state(
+    hass: HomeAssistant, mock_send_magic_packet: AsyncMock
+) -> None:
+    """Test that the state updates if we do not pass in a hostname."""
 
     assert await async_setup_component(
         hass,
@@ -255,16 +228,15 @@ async def test_invalid_hostname_windows(hass):
             "switch": {
                 "platform": "wake_on_lan",
                 "mac": "00-01-02-03-04-05",
-                "host": "invalidhostname",
             }
         },
     )
     await hass.async_block_till_done()
 
     state = hass.states.get("switch.wake_on_lan")
-    assert STATE_OFF == state.state
+    assert state.state == STATE_OFF
 
-    with patch.object(subprocess, "call", return_value=2):
+    with patch.object(subprocess, "call", return_value=0):
 
         await hass.services.async_call(
             switch.DOMAIN,
@@ -274,4 +246,14 @@ async def test_invalid_hostname_windows(hass):
         )
 
         state = hass.states.get("switch.wake_on_lan")
-        assert STATE_OFF == state.state
+        assert state.state == STATE_ON
+
+        await hass.services.async_call(
+            switch.DOMAIN,
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: "switch.wake_on_lan"},
+            blocking=True,
+        )
+
+        state = hass.states.get("switch.wake_on_lan")
+        assert state.state == STATE_OFF

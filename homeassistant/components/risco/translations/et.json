@@ -9,11 +9,24 @@
             "unknown": "Tundmatu viga"
         },
         "step": {
-            "user": {
+            "cloud": {
                 "data": {
                     "password": "Salas\u00f5na",
                     "pin": "PIN kood",
                     "username": "Kasutajanimi"
+                }
+            },
+            "local": {
+                "data": {
+                    "host": "Host",
+                    "pin": "PIN kood",
+                    "port": "Port"
+                }
+            },
+            "user": {
+                "menu_options": {
+                    "cloud": "Risco Cloud (soovitatav)",
+                    "local": "Kohalik Risco paneel (t\u00e4psem)"
                 }
             }
         }
@@ -27,7 +40,7 @@
                     "armed_home": "Valves kodus",
                     "armed_night": "Valves \u00f6ine"
                 },
-                "description": "Valige millisesse olekusse l\u00fcltub Risco alarm kui valvestada Home Assistant",
+                "description": "Vali millisesse olekusse l\u00fcltub Risco alarm kui valvestada Home Assistant",
                 "title": "Lisa Risco olekud Home Assistanti olekutesse"
             },
             "init": {

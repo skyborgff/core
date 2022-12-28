@@ -8,13 +8,18 @@ from homeassistant.const import (
     CONF_RADIUS,
     CONF_SCAN_INTERVAL,
     CONF_UNIT_SYSTEM,
-    CONF_UNIT_SYSTEM_IMPERIAL,
-    CONF_UNIT_SYSTEM_METRIC,
 )
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
-from .const import DEFAULT_RADIUS, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import (
+    DEFAULT_RADIUS,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    IMPERIAL_UNITS,
+    METRIC_UNITS,
+)
 
 
 @callback
@@ -28,8 +33,6 @@ def configured_instances(hass):
 
 class GeonetnzVolcanoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a GeoNet NZ Volcano config flow."""
-
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     async def _show_form(self, errors=None):
         """Show the form to the user."""
@@ -59,12 +62,12 @@ class GeonetnzVolcanoFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if identifier in configured_instances(self.hass):
             return await self._show_form({"base": "already_configured"})
 
-        if self.hass.config.units.name == CONF_UNIT_SYSTEM_IMPERIAL:
-            user_input[CONF_UNIT_SYSTEM] = CONF_UNIT_SYSTEM_IMPERIAL
+        if self.hass.config.units is US_CUSTOMARY_SYSTEM:
+            user_input[CONF_UNIT_SYSTEM] = IMPERIAL_UNITS
         else:
-            user_input[CONF_UNIT_SYSTEM] = CONF_UNIT_SYSTEM_METRIC
+            user_input[CONF_UNIT_SYSTEM] = METRIC_UNITS
 
         scan_interval = user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        user_input[CONF_SCAN_INTERVAL] = scan_interval.seconds
+        user_input[CONF_SCAN_INTERVAL] = scan_interval.total_seconds()
 
         return self.async_create_entry(title=identifier, data=user_input)

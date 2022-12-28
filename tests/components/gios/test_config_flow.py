@@ -1,5 +1,6 @@
 """Define tests for the GIOS config flow."""
 import json
+from unittest.mock import patch
 
 from gios import ApiError
 
@@ -8,9 +9,9 @@ from homeassistant.components.gios import config_flow
 from homeassistant.components.gios.const import CONF_STATION_ID
 from homeassistant.const import CONF_NAME
 
-from tests.async_mock import patch
+from . import STATIONS
+
 from tests.common import load_fixture
-from tests.components.gios import STATIONS
 
 CONFIG = {
     CONF_NAME: "Foo",
@@ -25,7 +26,7 @@ async def test_show_form(hass):
 
     result = await flow.async_step_user(user_input=None)
 
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["step_id"] == "user"
 
 
@@ -98,8 +99,8 @@ async def test_create_entry(hass):
 
         result = await flow.async_step_user(user_input=CONFIG)
 
-        assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
-        assert result["title"] == CONFIG[CONF_STATION_ID]
+        assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+        assert result["title"] == "Test Name 1"
         assert result["data"][CONF_STATION_ID] == CONFIG[CONF_STATION_ID]
 
-        assert flow.context["unique_id"] == CONFIG[CONF_STATION_ID]
+        assert flow.context["unique_id"] == "123"

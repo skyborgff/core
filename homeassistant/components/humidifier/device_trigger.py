@@ -1,11 +1,10 @@
 """Provides device automations for Climate."""
-from typing import List
+from __future__ import annotations
 
 import voluptuous as vol
 
-from homeassistant.components.automation import AutomationActionType
 from homeassistant.components.device_automation import (
-    TRIGGER_BASE_SCHEMA,
+    DEVICE_TRIGGER_BASE_SCHEMA,
     toggle_entity,
 )
 from homeassistant.components.homeassistant.triggers import (
@@ -24,12 +23,15 @@ from homeassistant.const import (
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_registry
+from homeassistant.helpers.trigger import TriggerActionType, TriggerInfo
 from homeassistant.helpers.typing import ConfigType
 
 from . import DOMAIN
 
-TARGET_TRIGGER_SCHEMA = vol.All(
-    TRIGGER_BASE_SCHEMA.extend(
+# mypy: disallow-any-generics
+
+HUMIDIFIER_TRIGGER_SCHEMA = vol.All(
+    DEVICE_TRIGGER_BASE_SCHEMA.extend(
         {
             vol.Required(CONF_ENTITY_ID): cv.entity_id,
             vol.Required(CONF_TYPE): "target_humidity_changed",
@@ -41,16 +43,20 @@ TARGET_TRIGGER_SCHEMA = vol.All(
     cv.has_at_least_one_key(CONF_BELOW, CONF_ABOVE),
 )
 
-TOGGLE_TRIGGER_SCHEMA = toggle_entity.TRIGGER_SCHEMA.extend(
-    {vol.Required(CONF_DOMAIN): DOMAIN}
+TRIGGER_SCHEMA = vol.All(
+    vol.Any(
+        HUMIDIFIER_TRIGGER_SCHEMA,
+        toggle_entity.TRIGGER_SCHEMA,
+    ),
+    vol.Schema({vol.Required(CONF_DOMAIN): DOMAIN}, extra=vol.ALLOW_EXTRA),
 )
 
-TRIGGER_SCHEMA = vol.Any(TARGET_TRIGGER_SCHEMA, TOGGLE_TRIGGER_SCHEMA)
 
-
-async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict]:
+async def async_get_triggers(
+    hass: HomeAssistant, device_id: str
+) -> list[dict[str, str]]:
     """List device triggers for Humidifier devices."""
-    registry = await entity_registry.async_get_registry(hass)
+    registry = entity_registry.async_get(hass)
     triggers = await toggle_entity.async_get_triggers(hass, device_id, DOMAIN)
 
     # Get all the integrations entities for this device
@@ -73,17 +79,17 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str) -> List[dict]:
 async def async_attach_trigger(
     hass: HomeAssistant,
     config: ConfigType,
-    action: AutomationActionType,
-    automation_info: dict,
+    action: TriggerActionType,
+    trigger_info: TriggerInfo,
 ) -> CALLBACK_TYPE:
     """Attach a trigger."""
-    trigger_type = config[CONF_TYPE]
-
-    if trigger_type == "target_humidity_changed":
+    if config[CONF_TYPE] == "target_humidity_changed":
         numeric_state_config = {
             numeric_state_trigger.CONF_PLATFORM: "numeric_state",
             numeric_state_trigger.CONF_ENTITY_ID: config[CONF_ENTITY_ID],
-            numeric_state_trigger.CONF_VALUE_TEMPLATE: "{{ state.attributes.humidity }}",
+            numeric_state_trigger.CONF_VALUE_TEMPLATE: (
+                "{{ state.attributes.humidity }}"
+            ),
         }
 
         if CONF_ABOVE in config:
@@ -93,23 +99,23 @@ async def async_attach_trigger(
         if CONF_FOR in config:
             numeric_state_config[CONF_FOR] = config[CONF_FOR]
 
-        numeric_state_config = numeric_state_trigger.TRIGGER_SCHEMA(
-            numeric_state_config
+        numeric_state_config = (
+            await numeric_state_trigger.async_validate_trigger_config(
+                hass, numeric_state_config
+            )
         )
         return await numeric_state_trigger.async_attach_trigger(
-            hass, numeric_state_config, action, automation_info, platform_type="device"
+            hass, numeric_state_config, action, trigger_info, platform_type="device"
         )
 
-    return await toggle_entity.async_attach_trigger(
-        hass, config, action, automation_info
-    )
+    return await toggle_entity.async_attach_trigger(hass, config, action, trigger_info)
 
 
-async def async_get_trigger_capabilities(hass: HomeAssistant, config):
+async def async_get_trigger_capabilities(
+    hass: HomeAssistant, config: ConfigType
+) -> dict[str, vol.Schema]:
     """List trigger capabilities."""
-    trigger_type = config[CONF_TYPE]
-
-    if trigger_type == "target_humidity_changed":
+    if config[CONF_TYPE] == "target_humidity_changed":
         return {
             "extra_fields": vol.Schema(
                 {

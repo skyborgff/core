@@ -5,9 +5,9 @@ import logging
 import blebox_uniapi
 
 from homeassistant.components.blebox.const import DOMAIN
-from homeassistant.config_entries import ENTRY_STATE_NOT_LOADED, ENTRY_STATE_SETUP_RETRY
+from homeassistant.config_entries import ConfigEntryState
 
-from .conftest import mock_config, patch_product_identify
+from .conftest import mock_config, patch_product_identify, setup_product_mock
 
 
 async def test_setup_failure(hass, caplog):
@@ -23,7 +23,7 @@ async def test_setup_failure(hass, caplog):
     await hass.async_block_till_done()
 
     assert "Identify failed at 172.100.123.4:80 ()" in caplog.text
-    assert entry.state == ENTRY_STATE_SETUP_RETRY
+    assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
 async def test_setup_failure_on_connection(hass, caplog):
@@ -39,12 +39,12 @@ async def test_setup_failure_on_connection(hass, caplog):
     await hass.async_block_till_done()
 
     assert "Identify failed at 172.100.123.4:80 ()" in caplog.text
-    assert entry.state == ENTRY_STATE_SETUP_RETRY
+    assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
 async def test_unload_config_entry(hass):
     """Test that unloading works properly."""
-    patch_product_identify(None)
+    setup_product_mock("switches", [])
 
     entry = mock_config()
     entry.add_to_hass(hass)
@@ -57,4 +57,4 @@ async def test_unload_config_entry(hass):
     await hass.async_block_till_done()
     assert not hass.data.get(DOMAIN)
 
-    assert entry.state == ENTRY_STATE_NOT_LOADED
+    assert entry.state is ConfigEntryState.NOT_LOADED

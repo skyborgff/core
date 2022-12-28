@@ -1,41 +1,69 @@
 """Test Home Assistant yaml loader."""
+import importlib
 import io
-import logging
 import os
+import pathlib
 import unittest
+from unittest.mock import patch
 
 import pytest
+import yaml as pyyaml
 
 from homeassistant.config import YAML_CONFIG_FILE, load_yaml_config_file
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.util.yaml as yaml
 from homeassistant.util.yaml import loader as yaml_loader
 
-from tests.async_mock import patch
 from tests.common import get_test_config_dir, patch_yaml_files
 
 
-@pytest.fixture(autouse=True)
-def mock_credstash():
-    """Mock credstash so it doesn't connect to the internet."""
-    with patch.object(yaml_loader, "credstash") as mock_credstash:
-        mock_credstash.getSecret.return_value = None
-        yield mock_credstash
+@pytest.fixture(params=["enable_c_loader", "disable_c_loader"])
+def try_both_loaders(request):
+    """Disable the yaml c loader."""
+    if not request.param == "disable_c_loader":
+        yield
+        return
+    try:
+        cloader = pyyaml.CSafeLoader
+    except ImportError:
+        return
+    del pyyaml.CSafeLoader
+    importlib.reload(yaml_loader)
+    yield
+    pyyaml.CSafeLoader = cloader
+    importlib.reload(yaml_loader)
 
 
-def test_simple_list():
+@pytest.fixture(params=["enable_c_dumper", "disable_c_dumper"])
+def try_both_dumpers(request):
+    """Disable the yaml c dumper."""
+    if not request.param == "disable_c_dumper":
+        yield
+        return
+    try:
+        cdumper = pyyaml.CSafeDumper
+    except ImportError:
+        return
+    del pyyaml.CSafeDumper
+    importlib.reload(yaml_loader)
+    yield
+    pyyaml.CSafeDumper = cdumper
+    importlib.reload(yaml_loader)
+
+
+def test_simple_list(try_both_loaders):
     """Test simple list."""
     conf = "config:\n  - simple\n  - list"
     with io.StringIO(conf) as file:
-        doc = yaml_loader.yaml.safe_load(file)
+        doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
     assert doc["config"] == ["simple", "list"]
 
 
-def test_simple_dict():
+def test_simple_dict(try_both_loaders):
     """Test simple dict."""
     conf = "key: value"
     with io.StringIO(conf) as file:
-        doc = yaml_loader.yaml.safe_load(file)
+        doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
     assert doc["key"] == "value"
 
 
@@ -46,68 +74,67 @@ def test_unhashable_key():
         load_yaml_config_file(YAML_CONFIG_FILE)
 
 
-def test_no_key():
+def test_no_key(try_both_loaders):
     """Test item without a key."""
     files = {YAML_CONFIG_FILE: "a: a\nnokeyhere"}
     with pytest.raises(HomeAssistantError), patch_yaml_files(files):
         yaml.load_yaml(YAML_CONFIG_FILE)
 
 
-def test_environment_variable():
+def test_environment_variable(try_both_loaders):
     """Test config file with environment variable."""
     os.environ["PASSWORD"] = "secret_password"
     conf = "password: !env_var PASSWORD"
     with io.StringIO(conf) as file:
-        doc = yaml_loader.yaml.safe_load(file)
+        doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
     assert doc["password"] == "secret_password"
     del os.environ["PASSWORD"]
 
 
-def test_environment_variable_default():
+def test_environment_variable_default(try_both_loaders):
     """Test config file with default value for environment variable."""
     conf = "password: !env_var PASSWORD secret_password"
     with io.StringIO(conf) as file:
-        doc = yaml_loader.yaml.safe_load(file)
+        doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
     assert doc["password"] == "secret_password"
 
 
-def test_invalid_environment_variable():
+def test_invalid_environment_variable(try_both_loaders):
     """Test config file with no environment variable sat."""
     conf = "password: !env_var PASSWORD"
-    with pytest.raises(HomeAssistantError):
-        with io.StringIO(conf) as file:
-            yaml_loader.yaml.safe_load(file)
+    with pytest.raises(HomeAssistantError), io.StringIO(conf) as file:
+        yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
 
 
-def test_include_yaml():
+def test_include_yaml(try_both_loaders):
     """Test include yaml."""
     with patch_yaml_files({"test.yaml": "value"}):
         conf = "key: !include test.yaml"
         with io.StringIO(conf) as file:
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert doc["key"] == "value"
 
     with patch_yaml_files({"test.yaml": None}):
         conf = "key: !include test.yaml"
         with io.StringIO(conf) as file:
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert doc["key"] == {}
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_list(mock_walk):
+def test_include_dir_list(mock_walk, try_both_loaders):
     """Test include dir list yaml."""
     mock_walk.return_value = [["/test", [], ["two.yaml", "one.yaml"]]]
 
     with patch_yaml_files({"/test/one.yaml": "one", "/test/two.yaml": "two"}):
         conf = "key: !include_dir_list /test"
         with io.StringIO(conf) as file:
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert doc["key"] == sorted(["one", "two"])
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_list_recursive(mock_walk):
+def test_include_dir_list_recursive(mock_walk, try_both_loaders):
     """Test include dir recursive list yaml."""
     mock_walk.return_value = [
         ["/test", ["tmp2", ".ignore", "ignore"], ["zero.yaml"]],
@@ -127,14 +154,14 @@ def test_include_dir_list_recursive(mock_walk):
             assert (
                 ".ignore" in mock_walk.return_value[0][1]
             ), "Expecting .ignore in here"
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert "tmp2" in mock_walk.return_value[0][1]
             assert ".ignore" not in mock_walk.return_value[0][1]
             assert sorted(doc["key"]) == sorted(["zero", "one", "two"])
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_named(mock_walk):
+def test_include_dir_named(mock_walk, try_both_loaders):
     """Test include dir named yaml."""
     mock_walk.return_value = [
         ["/test", [], ["first.yaml", "second.yaml", "secrets.yaml"]]
@@ -144,12 +171,12 @@ def test_include_dir_named(mock_walk):
         conf = "key: !include_dir_named /test"
         correct = {"first": "one", "second": "two"}
         with io.StringIO(conf) as file:
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert doc["key"] == correct
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_named_recursive(mock_walk):
+def test_include_dir_named_recursive(mock_walk, try_both_loaders):
     """Test include dir named yaml."""
     mock_walk.return_value = [
         ["/test", ["tmp2", ".ignore", "ignore"], ["first.yaml"]],
@@ -170,14 +197,14 @@ def test_include_dir_named_recursive(mock_walk):
             assert (
                 ".ignore" in mock_walk.return_value[0][1]
             ), "Expecting .ignore in here"
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert "tmp2" in mock_walk.return_value[0][1]
             assert ".ignore" not in mock_walk.return_value[0][1]
             assert doc["key"] == correct
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_merge_list(mock_walk):
+def test_include_dir_merge_list(mock_walk, try_both_loaders):
     """Test include dir merge list yaml."""
     mock_walk.return_value = [["/test", [], ["first.yaml", "second.yaml"]]]
 
@@ -186,12 +213,12 @@ def test_include_dir_merge_list(mock_walk):
     ):
         conf = "key: !include_dir_merge_list /test"
         with io.StringIO(conf) as file:
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert sorted(doc["key"]) == sorted(["one", "two", "three"])
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_merge_list_recursive(mock_walk):
+def test_include_dir_merge_list_recursive(mock_walk, try_both_loaders):
     """Test include dir merge list yaml."""
     mock_walk.return_value = [
         ["/test", ["tmp2", ".ignore", "ignore"], ["first.yaml"]],
@@ -211,14 +238,14 @@ def test_include_dir_merge_list_recursive(mock_walk):
             assert (
                 ".ignore" in mock_walk.return_value[0][1]
             ), "Expecting .ignore in here"
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert "tmp2" in mock_walk.return_value[0][1]
             assert ".ignore" not in mock_walk.return_value[0][1]
             assert sorted(doc["key"]) == sorted(["one", "two", "three", "four"])
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_merge_named(mock_walk):
+def test_include_dir_merge_named(mock_walk, try_both_loaders):
     """Test include dir merge named yaml."""
     mock_walk.return_value = [["/test", [], ["first.yaml", "second.yaml"]]]
 
@@ -230,12 +257,12 @@ def test_include_dir_merge_named(mock_walk):
     with patch_yaml_files(files):
         conf = "key: !include_dir_merge_named /test"
         with io.StringIO(conf) as file:
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert doc["key"] == {"key1": "one", "key2": "two", "key3": "three"}
 
 
 @patch("homeassistant.util.yaml.loader.os.walk")
-def test_include_dir_merge_named_recursive(mock_walk):
+def test_include_dir_merge_named_recursive(mock_walk, try_both_loaders):
     """Test include dir merge named yaml."""
     mock_walk.return_value = [
         ["/test", ["tmp2", ".ignore", "ignore"], ["first.yaml"]],
@@ -255,7 +282,7 @@ def test_include_dir_merge_named_recursive(mock_walk):
             assert (
                 ".ignore" in mock_walk.return_value[0][1]
             ), "Expecting .ignore in here"
-            doc = yaml_loader.yaml.safe_load(file)
+            doc = yaml_loader.yaml.load(file, Loader=yaml_loader.SafeLineLoader)
             assert "tmp2" in mock_walk.return_value[0][1]
             assert ".ignore" not in mock_walk.return_value[0][1]
             assert doc["key"] == {
@@ -267,19 +294,19 @@ def test_include_dir_merge_named_recursive(mock_walk):
 
 
 @patch("homeassistant.util.yaml.loader.open", create=True)
-def test_load_yaml_encoding_error(mock_open):
+def test_load_yaml_encoding_error(mock_open, try_both_loaders):
     """Test raising a UnicodeDecodeError."""
     mock_open.side_effect = UnicodeDecodeError("", b"", 1, 0, "")
     with pytest.raises(HomeAssistantError):
         yaml_loader.load_yaml("test")
 
 
-def test_dump():
+def test_dump(try_both_dumpers):
     """The that the dump method returns empty None values."""
     assert yaml.dump({"a": None, "b": "b"}) == "a:\nb: b\n"
 
 
-def test_dump_unicode():
+def test_dump_unicode(try_both_dumpers):
     """The that the dump method returns empty None values."""
     assert yaml.dump({"a": None, "b": "привет"}) == "a:\nb: привет\n"
 
@@ -287,25 +314,11 @@ def test_dump_unicode():
 FILES = {}
 
 
-def load_yaml(fname, string):
+def load_yaml(fname, string, secrets=None):
     """Write a string to file and return the parsed yaml."""
     FILES[fname] = string
     with patch_yaml_files(FILES):
-        return load_yaml_config_file(fname)
-
-
-class FakeKeyring:
-    """Fake a keyring class."""
-
-    def __init__(self, secrets_dict):
-        """Store keyring dictionary."""
-        self._secrets = secrets_dict
-
-    # pylint: disable=protected-access
-    def get_password(self, domain, name):
-        """Retrieve password."""
-        assert domain == yaml._SECRET_NAMESPACE
-        return self._secrets.get(name)
+        return load_yaml_config_file(fname, secrets)
 
 
 class TestSecrets(unittest.TestCase):
@@ -316,7 +329,6 @@ class TestSecrets(unittest.TestCase):
     def setUp(self):
         """Create & load secrets file."""
         config_dir = get_test_config_dir()
-        yaml.clear_secret_cache()
         self._yaml_path = os.path.join(config_dir, YAML_CONFIG_FILE)
         self._secret_path = os.path.join(config_dir, yaml.SECRET_YAML)
         self._sub_folder_path = os.path.join(config_dir, "subFolder")
@@ -338,11 +350,11 @@ class TestSecrets(unittest.TestCase):
             "  username: !secret comp1_un\n"
             "  password: !secret comp1_pw\n"
             "",
+            yaml_loader.Secrets(config_dir),
         )
 
     def tearDown(self):
         """Clean up secrets."""
-        yaml.clear_secret_cache()
         FILES.clear()
 
     def test_secrets_from_yaml(self):
@@ -364,6 +376,7 @@ class TestSecrets(unittest.TestCase):
             "  username: !secret comp1_un\n"
             "  password: !secret comp1_pw\n"
             "",
+            yaml_loader.Secrets(get_test_config_dir()),
         )
 
         assert expected == self._yaml["http"]
@@ -382,6 +395,7 @@ class TestSecrets(unittest.TestCase):
             "  username: !secret comp1_un\n"
             "  password: !secret comp1_pw\n"
             "",
+            yaml_loader.Secrets(get_test_config_dir()),
         )
 
         assert expected == self._yaml["http"]
@@ -395,27 +409,6 @@ class TestSecrets(unittest.TestCase):
                 "http:\n  api_password: !secret test",
             )
 
-    def test_secrets_keyring(self):
-        """Test keyring fallback & get_password."""
-        yaml_loader.keyring = None  # Ensure its not there
-        yaml_str = "http:\n  api_password: !secret http_pw_keyring"
-        with pytest.raises(HomeAssistantError):
-            load_yaml(self._yaml_path, yaml_str)
-
-        yaml_loader.keyring = FakeKeyring({"http_pw_keyring": "yeah"})
-        _yaml = load_yaml(self._yaml_path, yaml_str)
-        assert {"http": {"api_password": "yeah"}} == _yaml
-
-    @patch.object(yaml_loader, "credstash")
-    def test_secrets_credstash(self, mock_credstash):
-        """Test credstash fallback & get_password."""
-        mock_credstash.getSecret.return_value = "yeah"
-        yaml_str = "http:\n  api_password: !secret http_pw_credstash"
-        _yaml = load_yaml(self._yaml_path, yaml_str)
-        log = logging.getLogger()
-        log.error(_yaml["http"])
-        assert {"api_password": "yeah"} == _yaml["http"]
-
     def test_secrets_logger_removed(self):
         """Ensure logger: debug was removed."""
         with pytest.raises(HomeAssistantError):
@@ -424,9 +417,12 @@ class TestSecrets(unittest.TestCase):
     @patch("homeassistant.util.yaml.loader._LOGGER.error")
     def test_bad_logger_value(self, mock_error):
         """Ensure logger: debug was removed."""
-        yaml.clear_secret_cache()
         load_yaml(self._secret_path, "logger: info\npw: abc")
-        load_yaml(self._yaml_path, "api_password: !secret pw")
+        load_yaml(
+            self._yaml_path,
+            "api_password: !secret pw",
+            yaml_loader.Secrets(get_test_config_dir()),
+        )
         assert mock_error.call_count == 1, "Expected an error about logger: value"
 
     def test_secrets_are_not_dict(self):
@@ -434,7 +430,6 @@ class TestSecrets(unittest.TestCase):
         FILES[
             self._secret_path
         ] = "- http_pw: pwhttp\n  comp1_un: un1\n  comp1_pw: pw1\n"
-        yaml.clear_secret_cache()
         with pytest.raises(HomeAssistantError):
             load_yaml(
                 self._yaml_path,
@@ -447,7 +442,7 @@ class TestSecrets(unittest.TestCase):
             )
 
 
-def test_representing_yaml_loaded_data():
+def test_representing_yaml_loaded_data(try_both_dumpers):
     """Test we can represent YAML loaded data."""
     files = {YAML_CONFIG_FILE: 'key: [1, "2", 3]'}
     with patch_yaml_files(files):
@@ -455,12 +450,21 @@ def test_representing_yaml_loaded_data():
     assert yaml.dump(data) == "key:\n- 1\n- '2'\n- 3\n"
 
 
-def test_duplicate_key(caplog):
+def test_duplicate_key(caplog, try_both_loaders):
     """Test duplicate dict keys."""
     files = {YAML_CONFIG_FILE: "key: thing1\nkey: thing2"}
     with patch_yaml_files(files):
         load_yaml_config_file(YAML_CONFIG_FILE)
     assert "contains duplicate key" in caplog.text
+
+
+def test_no_recursive_secrets(caplog, try_both_loaders):
+    """Test that loading of secrets from the secrets file fails correctly."""
+    files = {YAML_CONFIG_FILE: "key: !secret a", yaml.SECRET_YAML: "a: 1\nb: !secret a"}
+    with patch_yaml_files(files), pytest.raises(HomeAssistantError) as e:
+        load_yaml_config_file(YAML_CONFIG_FILE)
+
+    assert e.value.args == ("Secrets not supported in this YAML file",)
 
 
 def test_input_class():
@@ -474,7 +478,25 @@ def test_input_class():
     assert len({input, input2}) == 1
 
 
-def test_input():
+def test_input(try_both_loaders, try_both_dumpers):
     """Test loading inputs."""
     data = {"hello": yaml.Input("test_name")}
     assert yaml.parse_yaml(yaml.dump(data)) == data
+
+
+@pytest.mark.skipif(
+    not os.environ.get("HASS_CI"),
+    reason="This test validates that the CI has the C loader available",
+)
+def test_c_loader_is_available_in_ci():
+    """Verify we are testing the C loader in the CI."""
+    assert yaml.loader.HAS_C_LOADER is True
+
+
+async def test_loading_actual_file_with_syntax(hass, try_both_loaders):
+    """Test loading a real file with syntax errors."""
+    with pytest.raises(HomeAssistantError):
+        fixture_path = pathlib.Path(__file__).parent.joinpath(
+            "fixtures", "bad.yaml.txt"
+        )
+        await hass.async_add_executor_job(load_yaml_config_file, fixture_path)

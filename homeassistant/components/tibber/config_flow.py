@@ -1,5 +1,8 @@
 """Adds config flow for Tibber integration."""
+from __future__ import annotations
+
 import asyncio
+from typing import Any
 
 import aiohttp
 import tibber
@@ -7,9 +10,10 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_ACCESS_TOKEN
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN  # pylint:disable=unused-import
+from .const import DOMAIN
 
 DATA_SCHEMA = vol.Schema({vol.Required(CONF_ACCESS_TOKEN): str})
 
@@ -18,17 +22,13 @@ class TibberConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Tibber integration."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
-    async def async_step_import(self, import_info):
-        """Set the config entry up from yaml."""
-        return await self.async_step_user(import_info)
-
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle the initial step."""
 
-        if self._async_current_entries():
-            return self.async_abort(reason="already_configured")
+        self._async_abort_entries_match()
 
         if user_input is not None:
             access_token = user_input[CONF_ACCESS_TOKEN].replace(" ", "")

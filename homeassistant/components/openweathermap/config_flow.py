@@ -1,4 +1,6 @@
 """Config flow for OpenWeatherMap."""
+from __future__ import annotations
+
 from pyowm import OWM
 from pyowm.commons.exceptions import APIRequestError, UnauthorizedError
 import voluptuous as vol
@@ -20,21 +22,22 @@ from .const import (
     DEFAULT_FORECAST_MODE,
     DEFAULT_LANGUAGE,
     DEFAULT_NAME,
+    DOMAIN,
     FORECAST_MODES,
     LANGUAGES,
 )
-from .const import DOMAIN  # pylint:disable=unused-import
 
 
 class OpenWeatherMapConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for OpenWeatherMap."""
 
     VERSION = CONFIG_FLOW_VERSION
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> OpenWeatherMapOptionsFlow:
         """Get the options flow for this handler."""
         return OpenWeatherMapOptionsFlow(config_entry)
 
@@ -90,7 +93,7 @@ class OpenWeatherMapConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class OpenWeatherMapOptionsFlow(config_entries.OptionsFlow):
     """Handle options."""
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
 
@@ -110,13 +113,15 @@ class OpenWeatherMapOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_MODE,
                     default=self.config_entry.options.get(
-                        CONF_MODE, DEFAULT_FORECAST_MODE
+                        CONF_MODE,
+                        self.config_entry.data.get(CONF_MODE, DEFAULT_FORECAST_MODE),
                     ),
                 ): vol.In(FORECAST_MODES),
                 vol.Optional(
                     CONF_LANGUAGE,
                     default=self.config_entry.options.get(
-                        CONF_LANGUAGE, DEFAULT_LANGUAGE
+                        CONF_LANGUAGE,
+                        self.config_entry.data.get(CONF_LANGUAGE, DEFAULT_LANGUAGE),
                     ),
                 ): vol.In(LANGUAGES),
             }
@@ -125,4 +130,4 @@ class OpenWeatherMapOptionsFlow(config_entries.OptionsFlow):
 
 async def _is_owm_api_online(hass, api_key, lat, lon):
     owm = OWM(api_key).weather_manager()
-    return await hass.async_add_executor_job(owm.one_call, lat, lon)
+    return await hass.async_add_executor_job(owm.weather_at_coords, lat, lon)

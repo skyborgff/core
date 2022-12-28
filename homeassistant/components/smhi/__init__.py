@@ -1,29 +1,48 @@
 """Support for the Swedish weather institute weather service."""
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Config, HomeAssistant
+from homeassistant.const import (
+    CONF_LATITUDE,
+    CONF_LOCATION,
+    CONF_LONGITUDE,
+    CONF_NAME,
+    Platform,
+)
+from homeassistant.core import HomeAssistant
 
-# Have to import for config_flow to work even if they are not used here
-from .config_flow import smhi_locations  # noqa: F401
-from .const import DOMAIN  # noqa: F401
-
-DEFAULT_NAME = "smhi"
-
-
-async def async_setup(hass: HomeAssistant, config: Config) -> bool:
-    """Set up configured SMHI."""
-    # We allow setup only through config flow type of config
-    return True
+PLATFORMS = [Platform.WEATHER]
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SMHI forecast as config entry."""
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, "weather")
-    )
+
+    # Setting unique id where missing
+    if entry.unique_id is None:
+        unique_id = f"{entry.data[CONF_LOCATION][CONF_LATITUDE]}-{entry.data[CONF_LOCATION][CONF_LONGITUDE]}"
+        hass.config_entries.async_update_entry(entry, unique_id=unique_id)
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    await hass.config_entries.async_forward_entry_unload(config_entry, "weather")
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old entry."""
+    if entry.version == 1:
+        new_data = {
+            CONF_NAME: entry.data[CONF_NAME],
+            CONF_LOCATION: {
+                CONF_LATITUDE: entry.data[CONF_LATITUDE],
+                CONF_LONGITUDE: entry.data[CONF_LONGITUDE],
+            },
+        }
+
+        if not hass.config_entries.async_update_entry(entry, data=new_data):
+            return False
+
+        entry.version = 2
+
     return True

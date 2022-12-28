@@ -1,7 +1,9 @@
 """Import logic for blueprint."""
+from __future__ import annotations
+
 from dataclasses import dataclass
+import html
 import re
-from typing import Optional
 
 import voluptuous as vol
 import yarl
@@ -57,9 +59,7 @@ def _get_github_import_url(url: str) -> str:
     if url.startswith("https://raw.githubusercontent.com/"):
         return url
 
-    match = GITHUB_FILE_PATTERN.match(url)
-
-    if match is None:
+    if (match := GITHUB_FILE_PATTERN.match(url)) is None:
         raise UnsupportedUrl("Not a GitHub file url")
 
     repo, path = match.groups()
@@ -72,8 +72,7 @@ def _get_community_post_import_url(url: str) -> str:
 
     Async friendly.
     """
-    match = COMMUNITY_TOPIC_PATTERN.match(url)
-    if match is None:
+    if (match := COMMUNITY_TOPIC_PATTERN.match(url)) is None:
         raise UnsupportedUrl("Not a topic url")
 
     _topic, post = match.groups()
@@ -92,12 +91,12 @@ def _get_community_post_import_url(url: str) -> str:
 def _extract_blueprint_from_community_topic(
     url: str,
     topic: dict,
-) -> Optional[ImportedBlueprint]:
+) -> ImportedBlueprint:
     """Extract a blueprint from a community post JSON.
 
     Async friendly.
     """
-    block_content = None
+    block_content: str
     blueprint = None
     post = topic["post_stream"]["posts"][0]
 
@@ -107,7 +106,7 @@ def _extract_blueprint_from_community_topic(
         if block_syntax not in ("auto", "yaml"):
             continue
 
-        block_content = block_content.strip()
+        block_content = html.unescape(block_content.strip())
 
         try:
             data = yaml.parse_yaml(block_content)
@@ -119,13 +118,15 @@ def _extract_blueprint_from_community_topic(
 
         if not is_blueprint_config(data):
             continue
+        assert isinstance(data, dict)
 
         blueprint = Blueprint(data)
         break
 
     if blueprint is None:
         raise HomeAssistantError(
-            "No valid blueprint found in the topic. Blueprint syntax blocks need to be marked as YAML or no syntax."
+            "No valid blueprint found in the topic. Blueprint syntax blocks need to be"
+            " marked as YAML or no syntax."
         )
 
     return ImportedBlueprint(
@@ -135,7 +136,7 @@ def _extract_blueprint_from_community_topic(
 
 async def fetch_blueprint_from_community_post(
     hass: HomeAssistant, url: str
-) -> Optional[ImportedBlueprint]:
+) -> ImportedBlueprint:
     """Get blueprints from a community post url.
 
     Method can raise aiohttp client exceptions, vol.Invalid.
@@ -161,6 +162,7 @@ async def fetch_blueprint_from_github_url(
     resp = await session.get(import_url, raise_for_status=True)
     raw_yaml = await resp.text()
     data = yaml.parse_yaml(raw_yaml)
+    assert isinstance(data, dict)
     blueprint = Blueprint(data)
 
     parsed_import_url = yarl.URL(import_url)
@@ -190,7 +192,7 @@ async def fetch_blueprint_from_github_gist_url(
 
     blueprint = None
     filename = None
-    content = None
+    content: str
 
     for filename, info in gist["files"].items():
         if not filename.endswith(".yaml"):
@@ -201,13 +203,15 @@ async def fetch_blueprint_from_github_gist_url(
 
         if not is_blueprint_config(data):
             continue
+        assert isinstance(data, dict)
 
         blueprint = Blueprint(data)
         break
 
     if blueprint is None:
         raise HomeAssistantError(
-            "No valid blueprint found in the gist. The blueprint file needs to end with '.yaml'"
+            "No valid blueprint found in the gist. The blueprint file needs to end with"
+            " '.yaml'"
         )
 
     return ImportedBlueprint(

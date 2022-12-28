@@ -1,11 +1,13 @@
 """Support for NZBGet switches."""
-from typing import Callable, List
+from __future__ import annotations
+
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import NZBGetEntity
 from .const import DATA_COORDINATOR, DOMAIN
@@ -13,9 +15,9 @@ from .coordinator import NZBGetDataUpdateCoordinator
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: Callable[[List[Entity], bool], None],
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up NZBGet sensor based on a config entry."""
     coordinator: NZBGetDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
@@ -41,7 +43,7 @@ class NZBGetDownloadSwitch(NZBGetEntity, SwitchEntity):
         coordinator: NZBGetDataUpdateCoordinator,
         entry_id: str,
         entry_name: str,
-    ):
+    ) -> None:
         """Initialize a new NZBGet switch."""
         self._unique_id = f"{entry_id}_download"
 
@@ -61,12 +63,12 @@ class NZBGetDownloadSwitch(NZBGetEntity, SwitchEntity):
         """Return the state of the switch."""
         return not self.coordinator.data["status"].get("DownloadPaused", False)
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Set downloads to enabled."""
         await self.hass.async_add_executor_job(self.coordinator.nzbget.resumedownload)
         await self.coordinator.async_request_refresh()
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Set downloads to paused."""
         await self.hass.async_add_executor_job(self.coordinator.nzbget.pausedownload)
         await self.coordinator.async_request_refresh()

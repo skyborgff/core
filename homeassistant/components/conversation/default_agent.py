@@ -1,6 +1,7 @@
-"""Standard conversastion implementation for Home Assistant."""
+"""Standard conversation implementation for Home Assistant."""
+from __future__ import annotations
+
 import re
-from typing import Optional
 
 from homeassistant import core, setup
 from homeassistant.components.cover.intent import INTENT_CLOSE_COVER, INTENT_OPEN_COVER
@@ -13,7 +14,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import intent
 from homeassistant.setup import ATTR_COMPONENT
 
-from .agent import AbstractConversationAgent
+from .agent import AbstractConversationAgent, ConversationResult
 from .const import DOMAIN
 from .util import create_matcher
 
@@ -52,7 +53,7 @@ def async_register(hass, intent_type, utterances):
 class DefaultAgent(AbstractConversationAgent):
     """Default agent for conversation agent."""
 
-    def __init__(self, hass: core.HomeAssistant):
+    def __init__(self, hass: core.HomeAssistant) -> None:
         """Initialize the default agent."""
         self.hass = hass
 
@@ -65,9 +66,7 @@ class DefaultAgent(AbstractConversationAgent):
         intents = self.hass.data.setdefault(DOMAIN, {})
 
         for intent_type, utterances in config.get("intents", {}).items():
-            conf = intents.get(intent_type)
-
-            if conf is None:
+            if (conf := intents.get(intent_type)) is None:
                 conf = intents[intent_type] = []
 
             conf.extend(create_matcher(utterance) for utterance in utterances)
@@ -112,23 +111,32 @@ class DefaultAgent(AbstractConversationAgent):
             async_register(self.hass, intent_type, sentences)
 
     async def async_process(
-        self, text: str, context: core.Context, conversation_id: Optional[str] = None
-    ) -> intent.IntentResponse:
+        self,
+        text: str,
+        context: core.Context,
+        conversation_id: str | None = None,
+        language: str | None = None,
+    ) -> ConversationResult | None:
         """Process a sentence."""
         intents = self.hass.data[DOMAIN]
 
         for intent_type, matchers in intents.items():
             for matcher in matchers:
-                match = matcher.match(text)
-
-                if not match:
+                if not (match := matcher.match(text)):
                     continue
 
-                return await intent.async_handle(
+                intent_response = await intent.async_handle(
                     self.hass,
                     DOMAIN,
                     intent_type,
                     {key: {"value": value} for key, value in match.groupdict().items()},
                     text,
                     context,
+                    language,
                 )
+
+                return ConversationResult(
+                    response=intent_response, conversation_id=conversation_id
+                )
+
+        return None

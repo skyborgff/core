@@ -1,4 +1,6 @@
 """Tests for emulated_roku library bindings."""
+from unittest.mock import AsyncMock, Mock, patch
+
 from homeassistant.components.emulated_roku.binding import (
     ATTR_APP_ID,
     ATTR_COMMAND_TYPE,
@@ -12,8 +14,6 @@ from homeassistant.components.emulated_roku.binding import (
     EmulatedRoku,
 )
 
-from tests.async_mock import AsyncMock, Mock, patch
-
 
 async def test_events_fired_properly(hass):
     """Test that events are fired correctly."""
@@ -25,7 +25,7 @@ async def test_events_fired_properly(hass):
     roku_event_handler = None
 
     def instantiate(
-        loop,
+        event_loop,
         handler,
         roku_usn,
         host_ip,

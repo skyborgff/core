@@ -1,0 +1,24 @@
+{
+    "config": {
+        "abort": {
+            "unknown": "Uventet feil"
+        },
+        "step": {
+            "confirm": {
+                "data": {
+                    "username": "Brukernavn"
+                }
+            },
+            "user": {
+                "data": {
+                    "username": "Brukernavn"
+                }
+            },
+            "user_custom_url": {
+                "data": {
+                    "username": "Brukernavn"
+                }
+            }
+        }
+    }
+}

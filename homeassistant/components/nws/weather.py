@@ -1,38 +1,31 @@
 """Support for NWS weather service."""
-from datetime import timedelta
-import logging
-
 from homeassistant.components.weather import (
     ATTR_CONDITION_CLEAR_NIGHT,
     ATTR_CONDITION_SUNNY,
     ATTR_FORECAST_CONDITION,
+    ATTR_FORECAST_NATIVE_TEMP,
+    ATTR_FORECAST_NATIVE_WIND_SPEED,
     ATTR_FORECAST_PRECIPITATION_PROBABILITY,
-    ATTR_FORECAST_TEMP,
     ATTR_FORECAST_TIME,
     ATTR_FORECAST_WIND_BEARING,
-    ATTR_FORECAST_WIND_SPEED,
     WeatherEntity,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_LATITUDE,
     CONF_LONGITUDE,
-    LENGTH_KILOMETERS,
-    LENGTH_METERS,
-    LENGTH_MILES,
-    PRESSURE_HPA,
-    PRESSURE_INHG,
-    PRESSURE_PA,
-    TEMP_CELSIUS,
-    TEMP_FAHRENHEIT,
+    UnitOfLength,
+    UnitOfPressure,
+    UnitOfSpeed,
+    UnitOfTemperature,
 )
-from homeassistant.core import callback
-from homeassistant.helpers.typing import ConfigType, HomeAssistantType
-from homeassistant.util.distance import convert as convert_distance
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.dt import utcnow
-from homeassistant.util.pressure import convert as convert_pressure
-from homeassistant.util.temperature import convert as convert_temperature
+from homeassistant.util.unit_conversion import SpeedConverter, TemperatureConverter
 
-from . import base_unique_id
+from . import base_unique_id, device_info
 from .const import (
     ATTR_FORECAST_DAYTIME,
     ATTR_FORECAST_DETAILED_DESCRIPTION,
@@ -43,16 +36,13 @@ from .const import (
     COORDINATOR_OBSERVATION,
     DAYNIGHT,
     DOMAIN,
+    FORECAST_VALID_TIME,
     HOURLY,
     NWS_DATA,
+    OBSERVATION_VALID_TIME,
 )
 
-_LOGGER = logging.getLogger(__name__)
-
 PARALLEL_UPDATES = 0
-
-OBSERVATION_VALID_TIME = timedelta(minutes=20)
-FORECAST_VALID_TIME = timedelta(minutes=45)
 
 
 def convert_condition(time, weather):
@@ -84,7 +74,7 @@ def convert_condition(time, weather):
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType, entry: ConfigType, async_add_entities
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the NWS weather platform."""
     hass_data = hass.data[DOMAIN][entry.entry_id]
@@ -101,6 +91,8 @@ async def async_setup_entry(
 class NWSWeather(WeatherEntity):
     """Representation of a weather condition."""
 
+    _attr_should_poll = False
+
     def __init__(self, entry_data, hass_data, mode, units):
         """Initialise the platform with a data instance and station name."""
         self.nws = hass_data[NWS_DATA]
@@ -113,7 +105,6 @@ class NWSWeather(WeatherEntity):
             self.coordinator_forecast = hass_data[COORDINATOR_FORECAST_HOURLY]
         self.station = self.nws.station
 
-        self.is_metric = units.is_metric
         self.mode = mode
 
         self.observation = None
@@ -141,11 +132,6 @@ class NWSWeather(WeatherEntity):
         self.async_write_ha_state()
 
     @property
-    def should_poll(self) -> bool:
-        """Entities do not individually poll."""
-        return False
-
-    @property
     def attribution(self):
         """Return the attribution."""
         return ATTRIBUTION
@@ -156,66 +142,54 @@ class NWSWeather(WeatherEntity):
         return f"{self.station} {self.mode.title()}"
 
     @property
-    def temperature(self):
+    def native_temperature(self):
         """Return the current temperature."""
-        temp_c = None
         if self.observation:
-            temp_c = self.observation.get("temperature")
-        if temp_c:
-            return convert_temperature(temp_c, TEMP_CELSIUS, TEMP_FAHRENHEIT)
+            return self.observation.get("temperature")
         return None
 
     @property
-    def pressure(self):
+    def native_temperature_unit(self):
+        """Return the current temperature unit."""
+        return UnitOfTemperature.CELSIUS
+
+    @property
+    def native_pressure(self):
         """Return the current pressure."""
-        pressure_pa = None
         if self.observation:
-            pressure_pa = self.observation.get("seaLevelPressure")
-        if pressure_pa is None:
-            return None
-        if self.is_metric:
-            pressure = convert_pressure(pressure_pa, PRESSURE_PA, PRESSURE_HPA)
-            pressure = round(pressure)
-        else:
-            pressure = convert_pressure(pressure_pa, PRESSURE_PA, PRESSURE_INHG)
-            pressure = round(pressure, 2)
-        return pressure
+            return self.observation.get("seaLevelPressure")
+        return None
+
+    @property
+    def native_pressure_unit(self):
+        """Return the current pressure unit."""
+        return UnitOfPressure.PA
 
     @property
     def humidity(self):
         """Return the name of the sensor."""
-        humidity = None
         if self.observation:
-            humidity = self.observation.get("relativeHumidity")
-        return humidity
+            return self.observation.get("relativeHumidity")
+        return None
 
     @property
-    def wind_speed(self):
+    def native_wind_speed(self):
         """Return the current windspeed."""
-        wind_km_hr = None
         if self.observation:
-            wind_km_hr = self.observation.get("windSpeed")
-        if wind_km_hr is None:
-            return None
+            return self.observation.get("windSpeed")
+        return None
 
-        if self.is_metric:
-            wind = wind_km_hr
-        else:
-            wind = convert_distance(wind_km_hr, LENGTH_KILOMETERS, LENGTH_MILES)
-        return round(wind)
+    @property
+    def native_wind_speed_unit(self):
+        """Return the current windspeed."""
+        return UnitOfSpeed.KILOMETERS_PER_HOUR
 
     @property
     def wind_bearing(self):
         """Return the current wind bearing (degrees)."""
-        wind_bearing = None
         if self.observation:
-            wind_bearing = self.observation.get("windDirection")
-        return wind_bearing
-
-    @property
-    def temperature_unit(self):
-        """Return the unit of measurement."""
-        return TEMP_FAHRENHEIT
+            return self.observation.get("windDirection")
+        return None
 
     @property
     def condition(self):
@@ -231,19 +205,16 @@ class NWSWeather(WeatherEntity):
         return None
 
     @property
-    def visibility(self):
+    def native_visibility(self):
         """Return visibility."""
-        vis_m = None
         if self.observation:
-            vis_m = self.observation.get("visibility")
-        if vis_m is None:
-            return None
+            return self.observation.get("visibility")
+        return None
 
-        if self.is_metric:
-            vis = convert_distance(vis_m, LENGTH_METERS, LENGTH_KILOMETERS)
-        else:
-            vis = convert_distance(vis_m, LENGTH_METERS, LENGTH_MILES)
-        return round(vis, 0)
+    @property
+    def native_visibility_unit(self):
+        """Return visibility unit."""
+        return UnitOfLength.METERS
 
     @property
     def forecast(self):
@@ -256,9 +227,15 @@ class NWSWeather(WeatherEntity):
                 ATTR_FORECAST_DETAILED_DESCRIPTION: forecast_entry.get(
                     "detailedForecast"
                 ),
-                ATTR_FORECAST_TEMP: forecast_entry.get("temperature"),
                 ATTR_FORECAST_TIME: forecast_entry.get("startTime"),
             }
+
+            if (temp := forecast_entry.get("temperature")) is not None:
+                data[ATTR_FORECAST_NATIVE_TEMP] = TemperatureConverter.convert(
+                    temp, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS
+                )
+            else:
+                data[ATTR_FORECAST_NATIVE_TEMP] = None
 
             if self.mode == DAYNIGHT:
                 data[ATTR_FORECAST_DAYTIME] = forecast_entry.get("isDaytime")
@@ -273,15 +250,14 @@ class NWSWeather(WeatherEntity):
 
             data[ATTR_FORECAST_WIND_BEARING] = forecast_entry.get("windBearing")
             wind_speed = forecast_entry.get("windSpeedAvg")
-            if wind_speed:
-                if self.is_metric:
-                    data[ATTR_FORECAST_WIND_SPEED] = round(
-                        convert_distance(wind_speed, LENGTH_MILES, LENGTH_KILOMETERS)
-                    )
-                else:
-                    data[ATTR_FORECAST_WIND_SPEED] = round(wind_speed)
+            if wind_speed is not None:
+                data[ATTR_FORECAST_NATIVE_WIND_SPEED] = SpeedConverter.convert(
+                    wind_speed,
+                    UnitOfSpeed.MILES_PER_HOUR,
+                    UnitOfSpeed.KILOMETERS_PER_HOUR,
+                )
             else:
-                data[ATTR_FORECAST_WIND_SPEED] = None
+                data[ATTR_FORECAST_NATIVE_WIND_SPEED] = None
             forecast.append(data)
         return forecast
 
@@ -291,7 +267,7 @@ class NWSWeather(WeatherEntity):
         return f"{base_unique_id(self.latitude, self.longitude)}_{self.mode}"
 
     @property
-    def available(self):
+    def available(self) -> bool:
         """Return if state is available."""
         last_success = (
             self.coordinator_observation.last_update_success
@@ -311,7 +287,7 @@ class NWSWeather(WeatherEntity):
             last_success_time = False
         return last_success or last_success_time
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Update the entity.
 
         Only used by the generic entity update service.
@@ -323,3 +299,8 @@ class NWSWeather(WeatherEntity):
     def entity_registry_enabled_default(self) -> bool:
         """Return if the entity should be enabled when first added to the entity registry."""
         return self.mode == DAYNIGHT
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device info."""
+        return device_info(self.latitude, self.longitude)

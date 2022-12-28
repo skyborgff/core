@@ -3,7 +3,8 @@
         "abort": {
             "already_configured": "Este servidor Plex j\u00e1 est\u00e1 configurado",
             "already_in_progress": "Plex est\u00e1 a ser configurado",
-            "unknown": "Falha por motivo desconhecido"
+            "reauth_successful": "Reautentica\u00e7\u00e3o bem sucedida",
+            "unknown": "Erro inesperado"
         },
         "error": {
             "faulty_credentials": "A autoriza\u00e7\u00e3o falhou, verifique o token"
@@ -11,8 +12,10 @@
         "step": {
             "manual_setup": {
                 "data": {
-                    "host": "Servidor",
-                    "port": "Porta"
+                    "host": "Endere\u00e7o",
+                    "port": "Porta",
+                    "ssl": "Utiliza um certificado SSL",
+                    "verify_ssl": "Verificar o certificado SSL"
                 }
             },
             "select_server": {

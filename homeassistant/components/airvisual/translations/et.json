@@ -1,23 +1,34 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Asukoht on juba m\u00e4\u00e4ratud v\u00f5i Node/Pro ID on juba registreeritud.",
+            "already_configured": "Asukoht on juba m\u00e4\u00e4ratud",
             "reauth_successful": "Taastuvastamine \u00f5nnestus"
         },
         "error": {
             "cannot_connect": "\u00dchendamine nurjus",
             "general_error": "Tundmatu viga",
-            "invalid_api_key": "Vale API v\u00f5ti"
+            "invalid_api_key": "Vale API v\u00f5ti",
+            "location_not_found": "Asukohta ei leitud"
         },
         "step": {
-            "geography": {
+            "geography_by_coords": {
                 "data": {
                     "api_key": "API v\u00f5ti",
                     "latitude": "Laiuskraad",
                     "longitude": "Pikkuskraad"
                 },
-                "description": "Kasutage AirVisual pilve API-t geograafilise asukoha j\u00e4lgimiseks.",
-                "title": "Seadista Geography"
+                "description": "Kasuta AirVisual pilve API-t pikkus/laiuskraadi j\u00e4lgimiseks.",
+                "title": "Seadista Geography sidumine"
+            },
+            "geography_by_name": {
+                "data": {
+                    "api_key": "API v\u00f5ti",
+                    "city": "Linn",
+                    "country": "Riik",
+                    "state": "olek"
+                },
+                "description": "Kasuta AirVisual pilve API-t linna/osariigi/riigi j\u00e4lgimiseks.",
+                "title": "Seadista Geography sidumine"
             },
             "node_pro": {
                 "data": {
@@ -34,14 +45,39 @@
                 "title": "Taastuvasta AirVisual"
             },
             "user": {
-                "data": {
-                    "cloud_api": "Geograafiline asukoht",
-                    "node_pro": "",
-                    "type": "Sidumise t\u00fc\u00fcp"
-                },
                 "description": "Vali millist t\u00fc\u00fcpi AirVisuali andmeid soovid j\u00e4lgida.",
                 "title": "Seadista AirVisual"
             }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "pollutant_label": {
+                "state": {
+                    "co": "Vingugaas",
+                    "n2": "L\u00e4mmastikdioksiid",
+                    "o3": "Osoon",
+                    "p1": "PM10 osakesed",
+                    "p2": "PM2.5 osakesed",
+                    "s2": "V\u00e4\u00e4veldioksiid"
+                }
+            },
+            "pollutant_level": {
+                "state": {
+                    "good": "Hea",
+                    "hazardous": "Ohtlik",
+                    "moderate": "M\u00f5\u00f5dukas",
+                    "unhealthy": "Ebatervislik",
+                    "unhealthy_sensitive": "Ebatervislik riskir\u00fchmale",
+                    "very_unhealthy": "V\u00e4ga ebatervislik"
+                }
+            }
+        }
+    },
+    "issues": {
+        "airvisual_pro_migration": {
+            "description": "AirVisual Pro seadmed on n\u00fc\u00fcd nende enda Home Assistanti sidumise (erinevalt sellest, et need on kaasatud algsesse AirVisuali sidumisse mis kasutab AirVisuali pilve API-d). Pro-seade, mis asub aadressil ` {ip_address} `, on automaatselt \u00fcle viidud. \n\n Osana sellest \u00fcleviimisest on pro seadme ID {old_device_id} muutunud v\u00e4\u00e4rtuseks {new_device_id} . V\u00e4rskendage neid automatiseerimisi, et kasutada uut seadme ID-d: {device_automations_string} .",
+            "title": "{ip_address} on n\u00fc\u00fcd osa AirVisual Pro sidumisest"
         }
     },
     "options": {

@@ -3,5 +3,7 @@
   "name": "Logbook",
   "documentation": "https://www.home-assistant.io/integrations/logbook",
   "dependencies": ["frontend", "http", "recorder"],
-  "codeowners": []
+  "codeowners": ["@home-assistant/core"],
+  "quality_scale": "internal",
+  "integration_type": "system"
 }

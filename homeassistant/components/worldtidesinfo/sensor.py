@@ -1,4 +1,6 @@
 """Support for the worldtides.info API."""
+from __future__ import annotations
+
 from datetime import timedelta
 import logging
 import time
@@ -6,16 +8,12 @@ import time
 import requests
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import (
-    ATTR_ATTRIBUTION,
-    CONF_API_KEY,
-    CONF_LATITUDE,
-    CONF_LONGITUDE,
-    CONF_NAME,
-)
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
+from homeassistant.const import CONF_API_KEY, CONF_LATITUDE, CONF_LONGITUDE, CONF_NAME
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +33,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
+def setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the WorldTidesInfo sensor."""
     name = config.get(CONF_NAME)
 
@@ -55,8 +58,10 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities([tides])
 
 
-class WorldTidesInfoSensor(Entity):
+class WorldTidesInfoSensor(SensorEntity):
     """Representation of a WorldTidesInfo sensor."""
+
+    _attr_attribution = ATTRIBUTION
 
     def __init__(self, name, lat, lon, key):
         """Initialize the sensor."""
@@ -72,9 +77,9 @@ class WorldTidesInfoSensor(Entity):
         return self._name
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        attr = {ATTR_ATTRIBUTION: ATTRIBUTION}
+        attr = {}
 
         if "High" in str(self.data["extremes"][0]["type"]):
             attr["high_tide_time_utc"] = self.data["extremes"][0]["date"]
@@ -89,7 +94,7 @@ class WorldTidesInfoSensor(Entity):
         return attr
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the device."""
         if self.data:
             if "High" in str(self.data["extremes"][0]["type"]):
@@ -105,7 +110,7 @@ class WorldTidesInfoSensor(Entity):
             return None
         return None
 
-    def update(self):
+    def update(self) -> None:
         """Get the latest data from WorldTidesInfo API."""
         start = int(time.time())
         resource = (

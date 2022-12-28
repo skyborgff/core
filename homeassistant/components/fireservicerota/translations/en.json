@@ -11,11 +11,11 @@
             "invalid_auth": "Invalid authentication"
         },
         "step": {
-            "reauth": {
+            "reauth_confirm": {
                 "data": {
                     "password": "Password"
                 },
-                "description": "Authentication tokens baceame invalid, login to recreate them."
+                "description": "Authentication tokens became invalid, login to recreate them."
             },
             "user": {
                 "data": {

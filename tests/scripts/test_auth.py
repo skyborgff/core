@@ -1,10 +1,11 @@
 """Test the auth script to manage local users."""
+from unittest.mock import Mock, patch
+
 import pytest
 
 from homeassistant.auth.providers import homeassistant as hass_auth
 from homeassistant.scripts import auth as script_auth
 
-from tests.async_mock import Mock, patch
 from tests.common import register_auth_provider
 
 
@@ -107,7 +108,7 @@ async def test_change_password_invalid_user(hass, provider, capsys, hass_storage
         data.validate_login("invalid-user", "new-pass")
 
 
-def test_parsing_args(loop):
+def test_parsing_args(event_loop):
     """Test we parse args correctly."""
     called = False
 

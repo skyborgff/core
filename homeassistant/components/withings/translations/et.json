@@ -12,7 +12,7 @@
         "error": {
             "already_configured": "Konto on juba seadistatud"
         },
-        "flow_title": "",
+        "flow_title": "{profile}",
         "step": {
             "pick_implementation": {
                 "title": "Vali tuvastusmeetod"
@@ -24,8 +24,8 @@
                 "description": "Anna neile andmetele ainulaadne profiilinimi. Tavaliselt on see eelmises etapis valitud profiili nimi.",
                 "title": "Kasutaja profiil."
             },
-            "reauth": {
-                "description": "Withingi andmete jsaamiseks tuleb kasutaja {profile} taastuvastada.",
+            "reauth_confirm": {
+                "description": "Profiil \"{profile}\" tuleb uuesti tuvastada, et j\u00e4tkata Withingsi andmete saamist.",
                 "title": "Taastuvasta sidumine"
             }
         }

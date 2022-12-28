@@ -1,9 +1,11 @@
 """Test config utils."""
 # pylint: disable=protected-access
 from collections import OrderedDict
+import contextlib
 import copy
 import os
 from unittest import mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import voluptuous as vol
@@ -20,32 +22,33 @@ from homeassistant.const import (
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_NAME,
-    CONF_TEMPERATURE_UNIT,
     CONF_UNIT_SYSTEM,
     CONF_UNIT_SYSTEM_IMPERIAL,
     CONF_UNIT_SYSTEM_METRIC,
     __version__,
 )
-from homeassistant.core import SOURCE_STORAGE, HomeAssistantError
-from homeassistant.helpers import config_validation as cv
+from homeassistant.core import ConfigSource, HomeAssistant, HomeAssistantError
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 import homeassistant.helpers.check_config as check_config
 from homeassistant.helpers.entity import Entity
 from homeassistant.loader import async_get_integration
-from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_system import (
+    _CONF_UNIT_SYSTEM_US_CUSTOMARY,
+    METRIC_SYSTEM,
+    US_CUSTOMARY_SYSTEM,
+    UnitSystem,
+)
 from homeassistant.util.yaml import SECRET_YAML
 
-from tests.async_mock import AsyncMock, Mock, patch
-from tests.common import get_test_config_dir, patch_yaml_files
+from tests.common import MockUser, get_test_config_dir, patch_yaml_files
 
 CONFIG_DIR = get_test_config_dir()
 YAML_PATH = os.path.join(CONFIG_DIR, config_util.YAML_CONFIG_FILE)
 SECRET_PATH = os.path.join(CONFIG_DIR, SECRET_YAML)
 VERSION_PATH = os.path.join(CONFIG_DIR, config_util.VERSION_FILE)
-GROUP_PATH = os.path.join(CONFIG_DIR, config_util.GROUP_CONFIG_PATH)
 AUTOMATIONS_PATH = os.path.join(CONFIG_DIR, config_util.AUTOMATION_CONFIG_PATH)
 SCRIPTS_PATH = os.path.join(CONFIG_DIR, config_util.SCRIPT_CONFIG_PATH)
 SCENES_PATH = os.path.join(CONFIG_DIR, config_util.SCENE_CONFIG_PATH)
-ORIG_TIMEZONE = dt_util.DEFAULT_TIME_ZONE
 
 
 def create_file(path):
@@ -54,9 +57,10 @@ def create_file(path):
         pass
 
 
+@pytest.fixture(autouse=True)
 def teardown():
     """Clean up."""
-    dt_util.DEFAULT_TIME_ZONE = ORIG_TIMEZONE
+    yield
 
     if os.path.isfile(YAML_PATH):
         os.remove(YAML_PATH)
@@ -66,9 +70,6 @@ def teardown():
 
     if os.path.isfile(VERSION_PATH):
         os.remove(VERSION_PATH)
-
-    if os.path.isfile(GROUP_PATH):
-        os.remove(GROUP_PATH)
 
     if os.path.isfile(AUTOMATIONS_PATH):
         os.remove(AUTOMATIONS_PATH)
@@ -82,12 +83,16 @@ def teardown():
 
 async def test_create_default_config(hass):
     """Test creation of default config."""
+    assert not os.path.isfile(YAML_PATH)
+    assert not os.path.isfile(SECRET_PATH)
+    assert not os.path.isfile(VERSION_PATH)
+    assert not os.path.isfile(AUTOMATIONS_PATH)
+
     await config_util.async_create_default_config(hass)
 
     assert os.path.isfile(YAML_PATH)
     assert os.path.isfile(SECRET_PATH)
     assert os.path.isfile(VERSION_PATH)
-    assert os.path.isfile(GROUP_PATH)
     assert os.path.isfile(AUTOMATIONS_PATH)
 
 
@@ -96,6 +101,7 @@ async def test_ensure_config_exists_creates_config(hass):
 
     If not creates a new config file.
     """
+    assert not os.path.isfile(YAML_PATH)
     with patch("builtins.print") as mock_print:
         await config_util.async_ensure_config_exists(hass)
 
@@ -109,6 +115,19 @@ async def test_ensure_config_exists_uses_existing_config(hass):
     await config_util.async_ensure_config_exists(hass)
 
     with open(YAML_PATH) as fp:
+        content = fp.read()
+
+    # File created with create_file are empty
+    assert content == ""
+
+
+async def test_ensure_existing_files_is_not_overwritten(hass):
+    """Test that calling async_create_default_config does not overwrite existing files."""
+    create_file(SECRET_PATH)
+
+    await config_util.async_create_default_config(hass)
+
+    with open(SECRET_PATH) as fp:
         content = fp.read()
 
     # File created with create_file are empty
@@ -134,7 +153,7 @@ def test_load_yaml_config_raises_error_if_not_dict():
 def test_load_yaml_config_raises_error_if_malformed_yaml():
     """Test error raised if invalid YAML."""
     with open(YAML_PATH, "w") as fp:
-        fp.write(":")
+        fp.write(":-")
 
     with pytest.raises(HomeAssistantError):
         config_util.load_yaml_config_file(YAML_PATH)
@@ -143,10 +162,21 @@ def test_load_yaml_config_raises_error_if_malformed_yaml():
 def test_load_yaml_config_raises_error_if_unsafe_yaml():
     """Test error raised if unsafe YAML."""
     with open(YAML_PATH, "w") as fp:
-        fp.write("hello: !!python/object/apply:os.system")
+        fp.write("- !!python/object/apply:os.system []")
 
-    with pytest.raises(HomeAssistantError):
+    with patch.object(os, "system") as system_mock, contextlib.suppress(
+        HomeAssistantError
+    ):
         config_util.load_yaml_config_file(YAML_PATH)
+
+    assert len(system_mock.mock_calls) == 0
+
+    # Here we validate that the test above is a good test
+    # since previously the syntax was not valid
+    with open(YAML_PATH) as fp, patch.object(os, "system") as system_mock:
+        list(yaml.unsafe_load_all(fp))
+
+    assert len(system_mock.mock_calls) == 1
 
 
 def test_load_yaml_config_preserves_key_order():
@@ -180,9 +210,12 @@ def test_core_config_schema():
         {"longitude": -181},
         {"external_url": "not an url"},
         {"internal_url": "not an url"},
+        {"currency", 100},
         {"customize": "bla"},
         {"customize": {"light.sensor": 100}},
         {"customize": {"entity_id": []}},
+        {"country": "xx"},
+        {"language": "xx"},
     ):
         with pytest.raises(MultipleInvalid):
             config_util.CORE_CONFIG_SCHEMA(value)
@@ -195,9 +228,25 @@ def test_core_config_schema():
             "external_url": "https://www.example.com",
             "internal_url": "http://example.local",
             CONF_UNIT_SYSTEM: CONF_UNIT_SYSTEM_METRIC,
+            "currency": "USD",
             "customize": {"sensor.temperature": {"hidden": True}},
+            "country": "SE",
+            "language": "sv",
         }
     )
+
+
+def test_core_config_schema_internal_external_warning(caplog):
+    """Test that we warn for internal/external URL with path."""
+    config_util.CORE_CONFIG_SCHEMA(
+        {
+            "external_url": "https://www.example.com/bla",
+            "internal_url": "http://example.local/yo",
+        }
+    )
+
+    assert "Invalid external_url set" in caplog.text
+    assert "Invalid internal_url set" in caplog.text
 
 
 def test_customize_dict_schema():
@@ -205,7 +254,6 @@ def test_customize_dict_schema():
     values = ({ATTR_FRIENDLY_NAME: None}, {ATTR_ASSUMED_STATE: "2"})
 
     for val in values:
-        print(val)
         with pytest.raises(MultipleInvalid):
             config_util.CUSTOMIZE_DICT_SCHEMA(val)
 
@@ -348,9 +396,13 @@ async def test_loading_configuration_from_storage(hass, hass_storage):
             "unit_system": "metric",
             "external_url": "https://www.example.com",
             "internal_url": "http://example.local",
+            "currency": "EUR",
+            "country": "SE",
+            "language": "sv",
         },
         "key": "core.config",
         "version": 1,
+        "minor_version": 3,
     }
     await config_util.async_process_ha_core_config(
         hass, {"allowlist_external_dirs": "/etc"}
@@ -361,12 +413,15 @@ async def test_loading_configuration_from_storage(hass, hass_storage):
     assert hass.config.elevation == 10
     assert hass.config.location_name == "Home"
     assert hass.config.units.name == CONF_UNIT_SYSTEM_METRIC
-    assert hass.config.time_zone.zone == "Europe/Copenhagen"
+    assert hass.config.time_zone == "Europe/Copenhagen"
     assert hass.config.external_url == "https://www.example.com"
     assert hass.config.internal_url == "http://example.local"
+    assert hass.config.currency == "EUR"
+    assert hass.config.country == "SE"
+    assert hass.config.language == "sv"
     assert len(hass.config.allowlist_external_dirs) == 3
     assert "/etc" in hass.config.allowlist_external_dirs
-    assert hass.config.config_source == SOURCE_STORAGE
+    assert hass.config.config_source is ConfigSource.STORAGE
 
 
 async def test_loading_configuration_from_storage_with_yaml_only(hass, hass_storage):
@@ -392,14 +447,14 @@ async def test_loading_configuration_from_storage_with_yaml_only(hass, hass_stor
     assert hass.config.elevation == 10
     assert hass.config.location_name == "Home"
     assert hass.config.units.name == CONF_UNIT_SYSTEM_METRIC
-    assert hass.config.time_zone.zone == "Europe/Copenhagen"
+    assert hass.config.time_zone == "Europe/Copenhagen"
     assert len(hass.config.allowlist_external_dirs) == 3
     assert "/etc" in hass.config.allowlist_external_dirs
     assert hass.config.media_dirs == {"mymedia": "/usr"}
-    assert hass.config.config_source == SOURCE_STORAGE
+    assert hass.config.config_source is ConfigSource.STORAGE
 
 
-async def test_updating_configuration(hass, hass_storage):
+async def test_migration_and_updating_configuration(hass, hass_storage):
     """Test updating configuration stores the new configuration."""
     core_data = {
         "data": {
@@ -408,23 +463,36 @@ async def test_updating_configuration(hass, hass_storage):
             "location_name": "Home",
             "longitude": 13,
             "time_zone": "Europe/Copenhagen",
-            "unit_system": "metric",
+            "unit_system": "imperial",
             "external_url": "https://www.example.com",
             "internal_url": "http://example.local",
+            "currency": "BTC",
         },
         "key": "core.config",
         "version": 1,
+        "minor_version": 1,
     }
     hass_storage["core.config"] = dict(core_data)
     await config_util.async_process_ha_core_config(
         hass, {"allowlist_external_dirs": "/etc"}
     )
-    await hass.config.async_update(latitude=50)
+    await hass.config.async_update(latitude=50, currency="USD")
 
-    new_core_data = copy.deepcopy(core_data)
-    new_core_data["data"]["latitude"] = 50
-    assert hass_storage["core.config"] == new_core_data
+    expected_new_core_data = copy.deepcopy(core_data)
+    # From async_update above
+    expected_new_core_data["data"]["latitude"] = 50
+    expected_new_core_data["data"]["currency"] = "USD"
+    # 1.1 -> 1.2 store migration with migrated unit system
+    expected_new_core_data["data"]["unit_system_v2"] = "us_customary"
+    expected_new_core_data["minor_version"] = 3
+    # defaults for country and language
+    expected_new_core_data["data"]["country"] = None
+    expected_new_core_data["data"]["language"] = "en"
+    assert hass_storage["core.config"] == expected_new_core_data
     assert hass.config.latitude == 50
+    assert hass.config.currency == "USD"
+    assert hass.config.country is None
+    assert hass.config.language == "en"
 
 
 async def test_override_stored_configuration(hass, hass_storage):
@@ -450,10 +518,10 @@ async def test_override_stored_configuration(hass, hass_storage):
     assert hass.config.elevation == 10
     assert hass.config.location_name == "Home"
     assert hass.config.units.name == CONF_UNIT_SYSTEM_METRIC
-    assert hass.config.time_zone.zone == "Europe/Copenhagen"
+    assert hass.config.time_zone == "Europe/Copenhagen"
     assert len(hass.config.allowlist_external_dirs) == 3
     assert "/etc" in hass.config.allowlist_external_dirs
-    assert hass.config.config_source == config_util.SOURCE_YAML
+    assert hass.config.config_source is ConfigSource.YAML
 
 
 async def test_loading_configuration(hass):
@@ -472,6 +540,9 @@ async def test_loading_configuration(hass):
             "internal_url": "http://example.local",
             "media_dirs": {"mymedia": "/usr"},
             "legacy_templates": True,
+            "currency": "EUR",
+            "country": "SE",
+            "language": "sv",
         },
     )
 
@@ -480,42 +551,84 @@ async def test_loading_configuration(hass):
     assert hass.config.elevation == 25
     assert hass.config.location_name == "Huis"
     assert hass.config.units.name == CONF_UNIT_SYSTEM_IMPERIAL
-    assert hass.config.time_zone.zone == "America/New_York"
+    assert hass.config.time_zone == "America/New_York"
     assert hass.config.external_url == "https://www.example.com"
     assert hass.config.internal_url == "http://example.local"
     assert len(hass.config.allowlist_external_dirs) == 3
     assert "/etc" in hass.config.allowlist_external_dirs
     assert "/usr" in hass.config.allowlist_external_dirs
     assert hass.config.media_dirs == {"mymedia": "/usr"}
-    assert hass.config.config_source == config_util.SOURCE_YAML
+    assert hass.config.config_source is ConfigSource.YAML
     assert hass.config.legacy_templates is True
+    assert hass.config.currency == "EUR"
+    assert hass.config.country == "SE"
+    assert hass.config.language == "sv"
 
 
-async def test_loading_configuration_temperature_unit(hass):
-    """Test backward compatibility when loading core config."""
+@pytest.mark.parametrize(
+    "minor_version, users, user_data, default_language",
+    (
+        (2, (), {}, "en"),
+        (2, ({"is_owner": True},), {}, "en"),
+        (
+            2,
+            ({"id": "user1", "is_owner": True},),
+            {"user1": {"language": {"language": "sv"}}},
+            "sv",
+        ),
+        (
+            2,
+            ({"id": "user1", "is_owner": False},),
+            {"user1": {"language": {"language": "sv"}}},
+            "en",
+        ),
+        (3, (), {}, "en"),
+        (3, ({"is_owner": True},), {}, "en"),
+        (
+            3,
+            ({"id": "user1", "is_owner": True},),
+            {"user1": {"language": {"language": "sv"}}},
+            "en",
+        ),
+        (
+            3,
+            ({"id": "user1", "is_owner": False},),
+            {"user1": {"language": {"language": "sv"}}},
+            "en",
+        ),
+    ),
+)
+async def test_language_default(
+    hass, hass_storage, minor_version, users, user_data, default_language
+):
+    """Test language config default to owner user's language during migration.
+
+    This should only happen if the core store version < 1.3
+    """
+    core_data = {
+        "data": {},
+        "key": "core.config",
+        "version": 1,
+        "minor_version": minor_version,
+    }
+    hass_storage["core.config"] = dict(core_data)
+
+    for user_config in users:
+        user = MockUser(**user_config).add_to_hass(hass)
+        if user.id not in user_data:
+            continue
+        storage_key = f"frontend.user_data_{user.id}"
+        hass_storage[storage_key] = {
+            "key": storage_key,
+            "version": 1,
+            "data": user_data[user.id],
+        }
+
     await config_util.async_process_ha_core_config(
         hass,
-        {
-            "latitude": 60,
-            "longitude": 50,
-            "elevation": 25,
-            "name": "Huis",
-            CONF_TEMPERATURE_UNIT: "C",
-            "time_zone": "America/New_York",
-            "external_url": "https://www.example.com",
-            "internal_url": "http://example.local",
-        },
+        {},
     )
-
-    assert hass.config.latitude == 60
-    assert hass.config.longitude == 50
-    assert hass.config.elevation == 25
-    assert hass.config.location_name == "Huis"
-    assert hass.config.units.name == CONF_UNIT_SYSTEM_METRIC
-    assert hass.config.time_zone.zone == "America/New_York"
-    assert hass.config.external_url == "https://www.example.com"
-    assert hass.config.internal_url == "http://example.local"
-    assert hass.config.config_source == config_util.SOURCE_YAML
+    assert hass.config.language == default_language
 
 
 async def test_loading_configuration_default_media_dirs_docker(hass):
@@ -543,7 +656,7 @@ async def test_loading_configuration_from_packages(hass):
             "longitude": -1,
             "elevation": 500,
             "name": "Huis",
-            CONF_TEMPERATURE_UNIT: "C",
+            CONF_UNIT_SYSTEM: CONF_UNIT_SYSTEM_METRIC,
             "time_zone": "Europe/Madrid",
             "external_url": "https://www.example.com",
             "internal_url": "http://example.local",
@@ -567,11 +680,40 @@ async def test_loading_configuration_from_packages(hass):
                 "longitude": -1,
                 "elevation": 500,
                 "name": "Huis",
-                CONF_TEMPERATURE_UNIT: "C",
+                CONF_UNIT_SYSTEM: CONF_UNIT_SYSTEM_METRIC,
                 "time_zone": "Europe/Madrid",
                 "packages": {"empty_package": None},
             },
         )
+
+
+@pytest.mark.parametrize(
+    "unit_system_name, expected_unit_system",
+    [
+        (CONF_UNIT_SYSTEM_METRIC, METRIC_SYSTEM),
+        (CONF_UNIT_SYSTEM_IMPERIAL, US_CUSTOMARY_SYSTEM),
+        (_CONF_UNIT_SYSTEM_US_CUSTOMARY, US_CUSTOMARY_SYSTEM),
+    ],
+)
+async def test_loading_configuration_unit_system(
+    hass: HomeAssistant, unit_system_name: str, expected_unit_system: UnitSystem
+) -> None:
+    """Test backward compatibility when loading core config."""
+    await config_util.async_process_ha_core_config(
+        hass,
+        {
+            "latitude": 60,
+            "longitude": 50,
+            "elevation": 25,
+            "name": "Huis",
+            "unit_system": unit_system_name,
+            "time_zone": "America/New_York",
+            "external_url": "https://www.example.com",
+            "internal_url": "http://example.local",
+        },
+    )
+
+    assert hass.config.units is expected_unit_system
 
 
 @patch("homeassistant.helpers.check_config.async_check_ha_config_file")
@@ -628,19 +770,30 @@ async def test_merge(merge_log_err, hass):
         "pack_list": {"light": {"platform": "test"}},
         "pack_list2": {"light": [{"platform": "test"}]},
         "pack_none": {"wake_on_lan": None},
+        "pack_special": {
+            "automation": [{"some": "yay"}],
+            "script": {"a_script": "yay"},
+            "template": [{"some": "yay"}],
+        },
     }
     config = {
         config_util.CONF_CORE: {config_util.CONF_PACKAGES: packages},
         "input_boolean": {"ib2": None},
         "light": {"platform": "test"},
+        "automation": [],
+        "script": {},
+        "template": [],
     }
     await config_util.merge_packages_config(hass, config, packages)
 
     assert merge_log_err.call_count == 0
-    assert len(config) == 5
+    assert len(config) == 8
     assert len(config["input_boolean"]) == 2
     assert len(config["input_select"]) == 1
     assert len(config["light"]) == 3
+    assert len(config["automation"]) == 1
+    assert len(config["script"]) == 1
+    assert len(config["template"]) == 1
     assert isinstance(config["wake_on_lan"], OrderedDict)
 
 
@@ -780,7 +933,6 @@ async def test_merge_id_schema(hass):
     types = {
         "panel_custom": "list",
         "group": "dict",
-        "script": "dict",
         "input_boolean": "dict",
         "shell_command": "dict",
         "qwikswitch": "dict",
@@ -1009,23 +1161,20 @@ async def test_component_config_exceptions(hass, caplog):
 
     # component.PLATFORM_SCHEMA
     caplog.clear()
-    assert (
-        await config_util.async_process_component_config(
-            hass,
-            {"test_domain": {"platform": "test_platform"}},
-            integration=Mock(
-                domain="test_domain",
-                get_platform=Mock(return_value=None),
-                get_component=Mock(
-                    return_value=Mock(
-                        spec=["PLATFORM_SCHEMA_BASE"],
-                        PLATFORM_SCHEMA_BASE=Mock(side_effect=ValueError("broken")),
-                    )
-                ),
+    assert await config_util.async_process_component_config(
+        hass,
+        {"test_domain": {"platform": "test_platform"}},
+        integration=Mock(
+            domain="test_domain",
+            get_platform=Mock(return_value=None),
+            get_component=Mock(
+                return_value=Mock(
+                    spec=["PLATFORM_SCHEMA_BASE"],
+                    PLATFORM_SCHEMA_BASE=Mock(side_effect=ValueError("broken")),
+                )
             ),
-        )
-        == {"test_domain": []}
-    )
+        ),
+    ) == {"test_domain": []}
     assert "ValueError: broken" in caplog.text
     assert (
         "Unknown error validating test_platform platform config with test_domain component platform schema"
@@ -1044,20 +1193,15 @@ async def test_component_config_exceptions(hass, caplog):
             )
         ),
     ):
-        assert (
-            await config_util.async_process_component_config(
-                hass,
-                {"test_domain": {"platform": "test_platform"}},
-                integration=Mock(
-                    domain="test_domain",
-                    get_platform=Mock(return_value=None),
-                    get_component=Mock(
-                        return_value=Mock(spec=["PLATFORM_SCHEMA_BASE"])
-                    ),
-                ),
-            )
-            == {"test_domain": []}
-        )
+        assert await config_util.async_process_component_config(
+            hass,
+            {"test_domain": {"platform": "test_platform"}},
+            integration=Mock(
+                domain="test_domain",
+                get_platform=Mock(return_value=None),
+                get_component=Mock(return_value=Mock(spec=["PLATFORM_SCHEMA_BASE"])),
+            ),
+        ) == {"test_domain": []}
         assert "ValueError: broken" in caplog.text
         assert (
             "Unknown error validating config for test_platform platform for test_domain component with PLATFORM_SCHEMA"
@@ -1088,6 +1232,26 @@ async def test_component_config_exceptions(hass, caplog):
         in caplog.text
     )
 
+    # get_component raising
+    caplog.clear()
+    assert (
+        await config_util.async_process_component_config(
+            hass,
+            {"test_domain": {}},
+            integration=Mock(
+                pkg_path="homeassistant.components.test_domain",
+                domain="test_domain",
+                get_component=Mock(
+                    side_effect=FileNotFoundError(
+                        "No such file or directory: b'liblibc.a'"
+                    )
+                ),
+            ),
+        )
+        is None
+    )
+    assert "Unable to import test_domain: No such file or directory" in caplog.text
+
 
 @pytest.mark.parametrize(
     "domain, schema, expected",
@@ -1116,7 +1280,7 @@ async def test_component_config_exceptions(hass, caplog):
         ("non_existing", vol.Schema({"zone": int}), None),
         ("zone", vol.Schema({}), None),
         ("plex", vol.Schema(vol.All({"plex": {"host": str}})), "dict"),
-        ("openuv", cv.deprecated("openuv", invalidation_version="0.115"), None),
+        ("openuv", cv.deprecated("openuv"), None),
     ],
 )
 def test_identify_config_schema(domain, schema, expected):
@@ -1125,3 +1289,67 @@ def test_identify_config_schema(domain, schema, expected):
         config_util._identify_config_schema(Mock(DOMAIN=domain, CONFIG_SCHEMA=schema))
         == expected
     )
+
+
+async def test_core_config_schema_historic_currency(hass):
+    """Test core config schema."""
+    await config_util.async_process_ha_core_config(hass, {"currency": "LTT"})
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue("homeassistant", "historic_currency")
+    assert issue
+    assert issue.translation_placeholders == {"currency": "LTT"}
+
+
+async def test_core_store_historic_currency(hass, hass_storage):
+    """Test core config store."""
+    core_data = {
+        "data": {
+            "currency": "LTT",
+        },
+        "key": "core.config",
+        "version": 1,
+        "minor_version": 1,
+    }
+    hass_storage["core.config"] = dict(core_data)
+    await config_util.async_process_ha_core_config(hass, {})
+
+    issue_registry = ir.async_get(hass)
+    issue_id = "historic_currency"
+    issue = issue_registry.async_get_issue("homeassistant", issue_id)
+    assert issue
+    assert issue.translation_placeholders == {"currency": "LTT"}
+
+    await hass.config.async_update(**{"currency": "EUR"})
+    issue = issue_registry.async_get_issue("homeassistant", issue_id)
+    assert not issue
+
+
+async def test_core_config_schema_no_country(hass):
+    """Test core config schema."""
+    await config_util.async_process_ha_core_config(hass, {})
+
+    issue_registry = ir.async_get(hass)
+    issue = issue_registry.async_get_issue("homeassistant", "country_not_configured")
+    assert issue
+
+
+async def test_core_store_no_country(hass, hass_storage):
+    """Test core config store."""
+    core_data = {
+        "data": {},
+        "key": "core.config",
+        "version": 1,
+        "minor_version": 1,
+    }
+    hass_storage["core.config"] = dict(core_data)
+    await config_util.async_process_ha_core_config(hass, {})
+
+    issue_registry = ir.async_get(hass)
+    issue_id = "country_not_configured"
+    issue = issue_registry.async_get_issue("homeassistant", issue_id)
+    assert issue
+
+    await hass.config.async_update(**{"country": "SE"})
+    issue = issue_registry.async_get_issue("homeassistant", issue_id)
+    assert not issue

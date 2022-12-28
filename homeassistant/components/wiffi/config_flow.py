@@ -2,6 +2,8 @@
 
 Used by UI to setup a wiffi integration.
 """
+from __future__ import annotations
+
 import errno
 
 import voluptuous as vol
@@ -11,22 +13,19 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PORT, CONF_TIMEOUT
 from homeassistant.core import callback
 
-from .const import (  # pylint: disable=unused-import
-    DEFAULT_PORT,
-    DEFAULT_TIMEOUT,
-    DOMAIN,
-)
+from .const import DEFAULT_PORT, DEFAULT_TIMEOUT, DOMAIN
 
 
 class WiffiFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Wiffi server setup config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> OptionsFlowHandler:
         """Create Wiffi server setup option flow."""
         return OptionsFlowHandler(config_entry)
 
@@ -43,6 +42,7 @@ class WiffiFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             return self._async_show_form()
 
         # received input from form or configuration.yaml
+        self._async_abort_entries_match(user_input)
 
         try:
             # try to start server to check whether port is in use
@@ -70,7 +70,7 @@ class WiffiFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Wiffi server setup option flow."""
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
 

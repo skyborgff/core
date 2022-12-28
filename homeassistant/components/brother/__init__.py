@@ -1,78 +1,73 @@
 """The Brother component."""
-import asyncio
+from __future__ import annotations
+
 from datetime import timedelta
 import logging
 
-from brother import Brother, SnmpError, UnsupportedModel
+import async_timeout
+from brother import Brother, BrotherSensors, SnmpError, UnsupportedModel
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_TYPE, EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import Config, HomeAssistant
+from homeassistant.const import CONF_HOST, CONF_TYPE, Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import DATA_CONFIG_ENTRY, DOMAIN, SNMP
+from .utils import get_snmp_engine
 
-PLATFORMS = ["sensor"]
+PLATFORMS = [Platform.SENSOR]
 
 SCAN_INTERVAL = timedelta(seconds=30)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup(hass: HomeAssistant, config: Config):
-    """Set up the Brother component."""
-    return True
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Brother from a config entry."""
     host = entry.data[CONF_HOST]
-    kind = entry.data[CONF_TYPE]
+    printer_type = entry.data[CONF_TYPE]
 
-    coordinator = BrotherDataUpdateCoordinator(hass, host=host, kind=kind)
-    await coordinator.async_refresh()
+    snmp_engine = get_snmp_engine(hass)
+    try:
+        brother = await Brother.create(
+            host, printer_type=printer_type, snmp_engine=snmp_engine
+        )
+    except (ConnectionError, SnmpError) as error:
+        raise ConfigEntryNotReady from error
 
-    if not coordinator.last_update_success:
-        coordinator.shutdown()
-        raise ConfigEntryNotReady
+    coordinator = BrotherDataUpdateCoordinator(hass, brother)
+    await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    hass.data[DOMAIN].setdefault(DATA_CONFIG_ENTRY, {})
+    hass.data[DOMAIN][DATA_CONFIG_ENTRY][entry.entry_id] = coordinator
+    hass.data[DOMAIN][SNMP] = snmp_engine
 
-    for component in PLATFORMS:
-        hass.async_create_task(
-            hass.config_entries.async_forward_entry_setup(entry, component)
-        )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = all(
-        await asyncio.gather(
-            *[
-                hass.config_entries.async_forward_entry_unload(entry, component)
-                for component in PLATFORMS
-            ]
-        )
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id).shutdown()
+        hass.data[DOMAIN][DATA_CONFIG_ENTRY].pop(entry.entry_id)
+        if not hass.data[DOMAIN][DATA_CONFIG_ENTRY]:
+            hass.data[DOMAIN].pop(SNMP)
+            hass.data[DOMAIN].pop(DATA_CONFIG_ENTRY)
 
     return unload_ok
 
 
-class BrotherDataUpdateCoordinator(DataUpdateCoordinator):
+class BrotherDataUpdateCoordinator(DataUpdateCoordinator[BrotherSensors]):
     """Class to manage fetching Brother data from the printer."""
 
-    def __init__(self, hass, host, kind):
+    def __init__(self, hass: HomeAssistant, brother: Brother) -> None:
         """Initialize."""
-        self.brother = Brother(host, kind=kind)
-        self._unsub_stop = hass.bus.async_listen(
-            EVENT_HOMEASSISTANT_STOP, self._handle_ha_stop
-        )
+        self.brother = brother
 
         super().__init__(
             hass,
@@ -81,24 +76,11 @@ class BrotherDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=SCAN_INTERVAL,
         )
 
-    async def _async_update_data(self):
+    async def _async_update_data(self) -> BrotherSensors:
         """Update data via library."""
-        # Race condition on shutdown. Stop all the fetches.
-        if self._unsub_stop is None:
-            return None
-
         try:
-            await self.brother.async_update()
+            async with async_timeout.timeout(20):
+                data = await self.brother.async_update()
         except (ConnectionError, SnmpError, UnsupportedModel) as error:
             raise UpdateFailed(error) from error
-        return self.brother.data
-
-    def shutdown(self):
-        """Shutdown the Brother coordinator."""
-        self._unsub_stop()
-        self._unsub_stop = None
-        self.brother.shutdown()
-
-    def _handle_ha_stop(self, _):
-        """Handle Home Assistant stopping."""
-        self.shutdown()
+        return data

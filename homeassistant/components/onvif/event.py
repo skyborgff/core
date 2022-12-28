@@ -1,11 +1,15 @@
 """ONVIF event abstraction."""
+from __future__ import annotations
+
 import asyncio
+from collections.abc import Callable
+from contextlib import suppress
 import datetime as dt
-from typing import Callable, Dict, List, Optional, Set
+from logging import DEBUG, WARNING
 
 from httpx import RemoteProtocolError, TransportError
 from onvif import ONVIFCamera, ONVIFService
-from zeep.exceptions import Fault
+from zeep.exceptions import Fault, XMLParseError
 
 from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
@@ -26,7 +30,9 @@ SUBSCRIPTION_ERRORS = (
 class EventManager:
     """ONVIF Event Manager."""
 
-    def __init__(self, hass: HomeAssistant, device: ONVIFCamera, unique_id: str):
+    def __init__(
+        self, hass: HomeAssistant, device: ONVIFCamera, unique_id: str
+    ) -> None:
         """Initialize event manager."""
         self.hass: HomeAssistant = hass
         self.device: ONVIFCamera = device
@@ -34,14 +40,14 @@ class EventManager:
         self.started: bool = False
 
         self._subscription: ONVIFService = None
-        self._events: Dict[str, Event] = {}
-        self._listeners: List[CALLBACK_TYPE] = []
-        self._unsub_refresh: Optional[CALLBACK_TYPE] = None
+        self._events: dict[str, Event] = {}
+        self._listeners: list[CALLBACK_TYPE] = []
+        self._unsub_refresh: CALLBACK_TYPE | None = None
 
         super().__init__()
 
     @property
-    def platforms(self) -> Set[str]:
+    def platforms(self) -> set[str]:
         """Return platforms to setup."""
         return {event.platform for event in self._events.values()}
 
@@ -84,10 +90,8 @@ class EventManager:
 
             # Initialize events
             pullpoint = self.device.create_pullpoint_service()
-            try:
+            with suppress(*SUBSCRIPTION_ERRORS):
                 await pullpoint.SetSynchronizationPoint()
-            except SUBSCRIPTION_ERRORS:
-                pass
             response = await pullpoint.PullMessages(
                 {"MessageLimit": 100, "Timeout": dt.timedelta(seconds=5)}
             )
@@ -111,28 +115,43 @@ class EventManager:
         await self._subscription.Unsubscribe()
         self._subscription = None
 
-    async def async_restart(self, _now: dt = None) -> None:
+    async def async_restart(self, _now: dt.datetime | None = None) -> None:
         """Restart the subscription assuming the camera rebooted."""
         if not self.started:
             return
 
         if self._subscription:
+            # Suppressed. The subscription may no longer exist.
             try:
                 await self._subscription.Unsubscribe()
-            except SUBSCRIPTION_ERRORS:
-                pass  # Ignored. The subscription may no longer exist.
+            except (XMLParseError, *SUBSCRIPTION_ERRORS) as err:
+                LOGGER.debug(
+                    (
+                        "Failed to unsubscribe ONVIF PullPoint subscription for '%s';"
+                        " This is normal if the device restarted: %s"
+                    ),
+                    self.unique_id,
+                    err,
+                )
             self._subscription = None
 
         try:
             restarted = await self.async_start()
-        except SUBSCRIPTION_ERRORS:
+        except (XMLParseError, *SUBSCRIPTION_ERRORS) as err:
             restarted = False
+            # Device may not support subscriptions so log at debug level
+            # when we get an XMLParseError
+            LOGGER.log(
+                DEBUG if isinstance(err, XMLParseError) else WARNING,
+                (
+                    "Failed to restart ONVIF PullPoint subscription for '%s'; "
+                    "Retrying later: %s"
+                ),
+                self.unique_id,
+                err,
+            )
 
         if not restarted:
-            LOGGER.warning(
-                "Failed to restart ONVIF PullPoint subscription for '%s'. Retrying...",
-                self.unique_id,
-            )
             # Try again in a minute
             self._unsub_refresh = async_call_later(self.hass, 60, self.async_restart)
         elif self._listeners:
@@ -157,7 +176,7 @@ class EventManager:
         """Schedule async_pull_messages to run."""
         self._unsub_refresh = async_call_later(self.hass, 1, self.async_pull_messages)
 
-    async def async_pull_messages(self, _now: dt = None) -> None:
+    async def async_pull_messages(self, _now: dt.datetime | None = None) -> None:
         """Pull messages from device."""
         if self.hass.state == CoreState.running:
             try:
@@ -172,11 +191,17 @@ class EventManager:
                 ).total_seconds() < 7200:
                     await self.async_renew()
             except RemoteProtocolError:
-                # Likley a shutdown event, nothing to see here
+                # Likely a shutdown event, nothing to see here
                 return
-            except SUBSCRIPTION_ERRORS as err:
-                LOGGER.warning(
-                    "Failed to fetch ONVIF PullPoint subscription messages for '%s': %s",
+            except (XMLParseError, *SUBSCRIPTION_ERRORS) as err:
+                # Device may not support subscriptions so log at debug level
+                # when we get an XMLParseError
+                LOGGER.log(
+                    DEBUG if isinstance(err, XMLParseError) else WARNING,
+                    (
+                        "Failed to fetch ONVIF PullPoint subscription messages for"
+                        " '%s': %s"
+                    ),
                     self.unique_id,
                     err,
                 )
@@ -206,8 +231,7 @@ class EventManager:
                 continue
 
             topic = msg.Topic._value_1
-            parser = PARSERS.get(topic)
-            if not parser:
+            if not (parser := PARSERS.get(topic)):
                 if topic not in UNHANDLED_TOPICS:
                     LOGGER.info(
                         "No registered handler for event from %s: %s",
@@ -220,15 +244,15 @@ class EventManager:
             event = await parser(self.unique_id, msg)
 
             if not event:
-                LOGGER.warning("Unable to parse event from %s: %s", self.unique_id, msg)
+                LOGGER.info("Unable to parse event from %s: %s", self.unique_id, msg)
                 return
 
             self._events[event.uid] = event
 
-    def get_uid(self, uid) -> Event:
+    def get_uid(self, uid) -> Event | None:
         """Retrieve event for given id."""
-        return self._events[uid]
+        return self._events.get(uid)
 
-    def get_platform(self, platform) -> List[Event]:
+    def get_platform(self, platform) -> list[Event]:
         """Retrieve events for given platform."""
         return [event for event in self._events.values() if event.platform == platform]

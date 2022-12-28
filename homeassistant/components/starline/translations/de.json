@@ -11,7 +11,7 @@
                     "app_id": "App-ID",
                     "app_secret": "Geheimnis"
                 },
-                "description": "Anwendungs-ID und Geheimcode aus dem <a href=\"https://my.starline.ru/developer\" target=\"_blank\">StarLine-Entwicklerkonto</a>",
+                "description": "Anwendungs-ID und Geheimcode aus dem [StarLine Entwicklerkonto](https://my.starline.ru/developer)",
                 "title": "Anmeldeinformationen der Anwendung"
             },
             "auth_captcha": {
@@ -26,7 +26,7 @@
                     "mfa_code": "SMS Code"
                 },
                 "description": "Gib den an das Telefon gesendeten Code ein {Telefon_Nummer}",
-                "title": "2-Faktor-Authentifizierung"
+                "title": "Zwei-Faktor-Authentifizierung"
             },
             "auth_user": {
                 "data": {

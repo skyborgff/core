@@ -1,13 +1,12 @@
 """Freebox component constants."""
+from __future__ import annotations
+
 import socket
 
-from homeassistant.const import (
-    DATA_RATE_KILOBYTES_PER_SECOND,
-    DEVICE_CLASS_TEMPERATURE,
-    TEMP_CELSIUS,
-)
+from homeassistant.const import Platform
 
 DOMAIN = "freebox"
+SERVICE_REBOOT = "reboot"
 
 APP_DESC = {
     "app_id": "hass",
@@ -17,7 +16,7 @@ APP_DESC = {
 }
 API_VERSION = "v6"
 
-PLATFORMS = ["device_tracker", "sensor", "switch"]
+PLATFORMS = [Platform.BUTTON, Platform.DEVICE_TRACKER, Platform.SENSOR, Platform.SWITCH]
 
 DEFAULT_DEVICE_NAME = "Unknown device"
 
@@ -25,42 +24,9 @@ DEFAULT_DEVICE_NAME = "Unknown device"
 STORAGE_KEY = DOMAIN
 STORAGE_VERSION = 1
 
-# Sensor
-SENSOR_NAME = "name"
-SENSOR_UNIT = "unit"
-SENSOR_ICON = "icon"
-SENSOR_DEVICE_CLASS = "device_class"
 
-CONNECTION_SENSORS = {
-    "rate_down": {
-        SENSOR_NAME: "Freebox download speed",
-        SENSOR_UNIT: DATA_RATE_KILOBYTES_PER_SECOND,
-        SENSOR_ICON: "mdi:download-network",
-        SENSOR_DEVICE_CLASS: None,
-    },
-    "rate_up": {
-        SENSOR_NAME: "Freebox upload speed",
-        SENSOR_UNIT: DATA_RATE_KILOBYTES_PER_SECOND,
-        SENSOR_ICON: "mdi:upload-network",
-        SENSOR_DEVICE_CLASS: None,
-    },
-}
+CONNECTION_SENSORS_KEYS = {"rate_down", "rate_up"}
 
-CALL_SENSORS = {
-    "missed": {
-        SENSOR_NAME: "Freebox missed calls",
-        SENSOR_UNIT: None,
-        SENSOR_ICON: "mdi:phone-missed",
-        SENSOR_DEVICE_CLASS: None,
-    },
-}
-
-TEMPERATURE_SENSOR_TEMPLATE = {
-    SENSOR_NAME: None,
-    SENSOR_UNIT: TEMP_CELSIUS,
-    SENSOR_ICON: "mdi:thermometer",
-    SENSOR_DEVICE_CLASS: DEVICE_CLASS_TEMPERATURE,
-}
 
 # Icons
 DEVICE_ICONS = {

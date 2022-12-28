@@ -1,14 +1,18 @@
 """Support for Västtrafik public transport."""
+from __future__ import annotations
+
 from datetime import timedelta
 import logging
 
 import vasttrafik
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import ATTR_ATTRIBUTION, CONF_NAME
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
+from homeassistant.const import CONF_DELAY, CONF_NAME
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util import Throttle
 from homeassistant.util.dt import now
 
@@ -18,9 +22,7 @@ ATTR_ACCESSIBILITY = "accessibility"
 ATTR_DIRECTION = "direction"
 ATTR_LINE = "line"
 ATTR_TRACK = "track"
-ATTRIBUTION = "Data provided by Västtrafik"
 
-CONF_DELAY = "delay"
 CONF_DEPARTURES = "departures"
 CONF_FROM = "from"
 CONF_HEADING = "heading"
@@ -38,7 +40,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_KEY): cv.string,
         vol.Required(CONF_SECRET): cv.string,
-        vol.Optional(CONF_DEPARTURES): [
+        vol.Required(CONF_DEPARTURES): [
             {
                 vol.Required(CONF_FROM): cv.string,
                 vol.Optional(CONF_DELAY, default=DEFAULT_DELAY): cv.positive_int,
@@ -53,13 +55,17 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
+def setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the departure sensor."""
-
     planner = vasttrafik.JournyPlanner(config.get(CONF_KEY), config.get(CONF_SECRET))
     sensors = []
 
-    for departure in config.get(CONF_DEPARTURES):
+    for departure in config[CONF_DEPARTURES]:
         sensors.append(
             VasttrafikDepartureSensor(
                 planner,
@@ -73,8 +79,10 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities(sensors, True)
 
 
-class VasttrafikDepartureSensor(Entity):
+class VasttrafikDepartureSensor(SensorEntity):
     """Implementation of a Vasttrafik Departure Sensor."""
+
+    _attr_attribution = "Data provided by Västtrafik"
 
     def __init__(self, planner, name, departure, heading, lines, delay):
         """Initialize the sensor."""
@@ -108,17 +116,17 @@ class VasttrafikDepartureSensor(Entity):
         return ICON
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the state attributes."""
         return self._attributes
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the next departure time."""
         return self._state
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
-    def update(self):
+    def update(self) -> None:
         """Get the departure board."""
         try:
             self._departureboard = self._planner.departureboard(
@@ -132,7 +140,7 @@ class VasttrafikDepartureSensor(Entity):
 
         if not self._departureboard:
             _LOGGER.debug(
-                "No departures from departure station %s " "to destination station %s",
+                "No departures from departure station %s to destination station %s",
                 self._departure["station_name"],
                 self._heading["station_name"] if self._heading else "ANY",
             )
@@ -151,7 +159,6 @@ class VasttrafikDepartureSensor(Entity):
 
                     params = {
                         ATTR_ACCESSIBILITY: departure.get("accessibility"),
-                        ATTR_ATTRIBUTION: ATTRIBUTION,
                         ATTR_DIRECTION: departure.get("direction"),
                         ATTR_LINE: departure.get("sname"),
                         ATTR_TRACK: departure.get("track"),

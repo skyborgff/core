@@ -5,7 +5,7 @@
             "cannot_connect": "\u9023\u7dda\u5931\u6557",
             "invalid_auth": "\u9a57\u8b49\u78bc\u7121\u6548"
         },
-        "flow_title": "OVO Energy\uff1a{username}",
+        "flow_title": "{username}",
         "step": {
             "reauth": {
                 "data": {
@@ -16,6 +16,7 @@
             },
             "user": {
                 "data": {
+                    "account": "OVO \u5e33\u865f ID\uff08\u7576\u6709\u591a\u500b\u5e33\u865f\u6642\u624d\u9700\u586b\u5beb\uff09",
                     "password": "\u5bc6\u78bc",
                     "username": "\u4f7f\u7528\u8005\u540d\u7a31"
                 },

@@ -1,4 +1,8 @@
 """Constants for National Weather Service Integration."""
+from __future__ import annotations
+
+from datetime import timedelta
+
 from homeassistant.components.weather import (
     ATTR_CONDITION_CLOUDY,
     ATTR_CONDITION_EXCEPTIONAL,
@@ -35,7 +39,7 @@ CONDITION_CLASSES = {
         "Hot",
         "Cold",
     ],
-    ATTR_CONDITION_SNOWY: ["Snow", "Sleet", "Blizzard"],
+    ATTR_CONDITION_SNOWY: ["Snow", "Sleet", "Snow/sleet", "Blizzard"],
     ATTR_CONDITION_SNOWY_RAINY: [
         "Rain/snow",
         "Rain/sleet",
@@ -75,3 +79,6 @@ NWS_DATA = "nws data"
 COORDINATOR_OBSERVATION = "coordinator_observation"
 COORDINATOR_FORECAST = "coordinator_forecast"
 COORDINATOR_FORECAST_HOURLY = "coordinator_forecast_hourly"
+
+OBSERVATION_VALID_TIME = timedelta(minutes=20)
+FORECAST_VALID_TIME = timedelta(minutes=45)

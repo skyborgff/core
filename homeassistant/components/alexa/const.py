@@ -1,9 +1,8 @@
 """Constants for the Alexa integration."""
 from collections import OrderedDict
 
-from homeassistant.components import fan
-from homeassistant.components.climate import const as climate
-from homeassistant.const import TEMP_CELSIUS, TEMP_FAHRENHEIT
+from homeassistant.components import climate
+from homeassistant.const import UnitOfTemperature
 
 DOMAIN = "alexa"
 EVENT_ALEXA_SMART_HOME = "alexa_smart_home"
@@ -19,7 +18,6 @@ CONF_FILTER = "filter"
 CONF_ENTITY_CONFIG = "entity_config"
 CONF_ENDPOINT = "endpoint"
 CONF_LOCALE = "locale"
-CONF_PASSWORD = "password"
 
 ATTR_UID = "uid"
 ATTR_UPDATE_DATE = "updateDate"
@@ -30,7 +28,9 @@ ATTR_REDIRECTION_URL = "redirectionURL"
 
 SYN_RESOLUTION_MATCH = "ER_SUCCESS_MATCH"
 
-DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.0Z"
+# Alexa requires timestamps to be formatted according to ISO 8601, YYYY-MM-DDThh:mm:ssZ
+# https://developer.amazon.com/es-ES/docs/alexa/device-apis/alexa-scenecontroller.html#activate-response-event
+DATE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 API_DIRECTIVE = "directive"
 API_ENDPOINT = "endpoint"
@@ -42,7 +42,6 @@ API_SCOPE = "scope"
 API_CHANGE = "change"
 API_PASSWORD = "password"
 
-CONF_DESCRIPTION = "description"
 CONF_DISPLAY_CATEGORIES = "display_categories"
 CONF_SUPPORTED_LOCALES = (
     "de-DE",
@@ -53,37 +52,43 @@ CONF_SUPPORTED_LOCALES = (
     "en-US",
     "es-ES",
     "es-MX",
+    "es-US",
     "fr-CA",
     "fr-FR",
+    "hi-IN",
     "it-IT",
     "ja-JP",
+    "pt-BR",
 )
 
-API_TEMP_UNITS = {TEMP_FAHRENHEIT: "FAHRENHEIT", TEMP_CELSIUS: "CELSIUS"}
+API_TEMP_UNITS = {
+    UnitOfTemperature.FAHRENHEIT: "FAHRENHEIT",
+    UnitOfTemperature.CELSIUS: "CELSIUS",
+}
 
 # Needs to be ordered dict for `async_api_set_thermostat_mode` which does a
 # reverse mapping of this dict and we want to map the first occurrence of OFF
 # back to HA state.
 API_THERMOSTAT_MODES = OrderedDict(
     [
-        (climate.HVAC_MODE_HEAT, "HEAT"),
-        (climate.HVAC_MODE_COOL, "COOL"),
-        (climate.HVAC_MODE_HEAT_COOL, "AUTO"),
-        (climate.HVAC_MODE_AUTO, "AUTO"),
-        (climate.HVAC_MODE_OFF, "OFF"),
-        (climate.HVAC_MODE_FAN_ONLY, "OFF"),
-        (climate.HVAC_MODE_DRY, "CUSTOM"),
+        (climate.HVACMode.HEAT, "HEAT"),
+        (climate.HVACMode.COOL, "COOL"),
+        (climate.HVACMode.HEAT_COOL, "AUTO"),
+        (climate.HVACMode.AUTO, "AUTO"),
+        (climate.HVACMode.OFF, "OFF"),
+        (climate.HVACMode.FAN_ONLY, "CUSTOM"),
+        (climate.HVACMode.DRY, "CUSTOM"),
     ]
 )
-API_THERMOSTAT_MODES_CUSTOM = {climate.HVAC_MODE_DRY: "DEHUMIDIFY"}
+API_THERMOSTAT_MODES_CUSTOM = {
+    climate.HVACMode.DRY: "DEHUMIDIFY",
+    climate.HVACMode.FAN_ONLY: "FAN",
+}
 API_THERMOSTAT_PRESETS = {climate.PRESET_ECO: "ECO"}
 
-PERCENTAGE_FAN_MAP = {
-    fan.SPEED_OFF: 0,
-    fan.SPEED_LOW: 33,
-    fan.SPEED_MEDIUM: 66,
-    fan.SPEED_HIGH: 100,
-}
+# AlexaModeController does not like a single mode for the fan preset or humidifier mode,
+# we add PRESET_MODE_NA if a fan / humidifier has only one preset_mode
+PRESET_MODE_NA = "-"
 
 
 class Cause:

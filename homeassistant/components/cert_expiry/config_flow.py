@@ -1,12 +1,17 @@
 """Config flow for the Cert Expiry platform."""
+from __future__ import annotations
+
+from collections.abc import Mapping
 import logging
+from typing import Any
 
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.data_entry_flow import FlowResult
 
-from .const import DEFAULT_PORT, DOMAIN  # pylint: disable=unused-import
+from .const import DEFAULT_PORT, DOMAIN
 from .errors import (
     ConnectionRefused,
     ConnectionTimeout,
@@ -22,13 +27,15 @@ class CertexpiryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._errors = {}
+        self._errors: dict[str, str] = {}
 
-    async def _test_connection(self, user_input=None):
+    async def _test_connection(
+        self,
+        user_input: Mapping[str, Any],
+    ):
         """Test connection to the server and try to get the certificate."""
         try:
             await get_cert_expiry_timestamp(
@@ -47,7 +54,10 @@ class CertexpiryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return True
         return False
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> FlowResult:
         """Step when user initializes a integration."""
         self._errors = {}
         if user_input is not None:
@@ -63,9 +73,7 @@ class CertexpiryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     title=title,
                     data={CONF_HOST: host, CONF_PORT: port},
                 )
-            if (  # pylint: disable=no-member
-                self.context["source"] == config_entries.SOURCE_IMPORT
-            ):
+            if self.context["source"] == config_entries.SOURCE_IMPORT:
                 _LOGGER.error("Config import failed for %s", user_input[CONF_HOST])
                 return self.async_abort(reason="import_failed")
         else:
@@ -86,7 +94,10 @@ class CertexpiryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=self._errors,
         )
 
-    async def async_step_import(self, user_input=None):
+    async def async_step_import(
+        self,
+        user_input: Mapping[str, Any] | None = None,
+    ) -> FlowResult:
         """Import a config entry.
 
         Only host was required in the yaml file all other fields are optional

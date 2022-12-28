@@ -1,4 +1,6 @@
 """OpenTherm Gateway config flow."""
+from __future__ import annotations
+
 import asyncio
 
 import pyotgw
@@ -19,18 +21,25 @@ from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
 
 from . import DOMAIN
-from .const import CONF_FLOOR_TEMP, CONF_PRECISION
+from .const import (
+    CONF_FLOOR_TEMP,
+    CONF_READ_PRECISION,
+    CONF_SET_PRECISION,
+    CONF_TEMPORARY_OVRD_MODE,
+    CONNECTION_TIMEOUT,
+)
 
 
 class OpenThermGwConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """OpenTherm Gateway Config Flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> OpenThermGwOptionsFlow:
         """Get the options flow for this handler."""
         return OpenThermGwOptionsFlow(config_entry)
 
@@ -41,7 +50,7 @@ class OpenThermGwConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             device = info[CONF_DEVICE]
             gw_id = cv.slugify(info.get(CONF_ID, name))
 
-            entries = [e.data for e in self.hass.config_entries.async_entries(DOMAIN)]
+            entries = [e.data for e in self._async_current_entries()]
 
             if gw_id in [e[CONF_ID] for e in entries]:
                 return self._show_form({"base": "id_exists"})
@@ -51,18 +60,24 @@ class OpenThermGwConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             async def test_connection():
                 """Try to connect to the OpenTherm Gateway."""
-                otgw = pyotgw.pyotgw()
-                status = await otgw.connect(self.hass.loop, device)
+                otgw = pyotgw.OpenThermGateway()
+                status = await otgw.connect(device)
                 await otgw.disconnect()
-                return status.get(gw_vars.OTGW_ABOUT)
+                if not status:
+                    raise ConnectionError
+                return status[gw_vars.OTGW].get(gw_vars.OTGW_ABOUT)
 
             try:
-                res = await asyncio.wait_for(test_connection(), timeout=10)
-            except (asyncio.TimeoutError, SerialException):
+                await asyncio.wait_for(
+                    test_connection(),
+                    timeout=CONNECTION_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                return self._show_form({"base": "timeout_connect"})
+            except (ConnectionError, SerialException):
                 return self._show_form({"base": "cannot_connect"})
 
-            if res:
-                return self._create_entry(gw_id, name, device)
+            return self._create_entry(gw_id, name, device)
 
         return self._show_form()
 
@@ -107,7 +122,7 @@ class OpenThermGwConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class OpenThermGwOptionsFlow(config_entries.OptionsFlow):
     """Handle opentherm_gw options."""
 
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize the options flow."""
         self.config_entry = config_entry
 
@@ -121,14 +136,29 @@ class OpenThermGwOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        CONF_PRECISION,
-                        default=self.config_entry.options.get(CONF_PRECISION, 0),
+                        CONF_READ_PRECISION,
+                        default=self.config_entry.options.get(CONF_READ_PRECISION, 0),
                     ): vol.All(
                         vol.Coerce(float),
                         vol.In(
                             [0, PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
                         ),
                     ),
+                    vol.Optional(
+                        CONF_SET_PRECISION,
+                        default=self.config_entry.options.get(CONF_SET_PRECISION, 0),
+                    ): vol.All(
+                        vol.Coerce(float),
+                        vol.In(
+                            [0, PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
+                        ),
+                    ),
+                    vol.Optional(
+                        CONF_TEMPORARY_OVRD_MODE,
+                        default=self.config_entry.options.get(
+                            CONF_TEMPORARY_OVRD_MODE, True
+                        ),
+                    ): bool,
                     vol.Optional(
                         CONF_FLOOR_TEMP,
                         default=self.config_entry.options.get(CONF_FLOOR_TEMP, False),

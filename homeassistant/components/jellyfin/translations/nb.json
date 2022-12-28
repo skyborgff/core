@@ -1,0 +1,14 @@
+{
+    "config": {
+        "error": {
+            "unknown": "Uventet feil"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "username": "Brukernavn"
+                }
+            }
+        }
+    }
+}

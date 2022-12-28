@@ -1,50 +1,221 @@
 """Config validation helper for the script integration."""
-import asyncio
+from __future__ import annotations
+
+from collections.abc import Mapping
+from contextlib import suppress
+from typing import Any
 
 import voluptuous as vol
+from voluptuous.humanize import humanize_error
 
-from homeassistant.config import async_log_exception
-from homeassistant.const import CONF_SEQUENCE
+from homeassistant.components.blueprint import (
+    BlueprintException,
+    is_blueprint_instance_config,
+)
+from homeassistant.components.trace import TRACE_CONFIG_SCHEMA
+from homeassistant.config import config_without_domain
+from homeassistant.const import (
+    CONF_ALIAS,
+    CONF_DEFAULT,
+    CONF_DESCRIPTION,
+    CONF_ICON,
+    CONF_NAME,
+    CONF_SELECTOR,
+    CONF_SEQUENCE,
+    CONF_VARIABLES,
+)
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.script import async_validate_action_config
+from homeassistant.helpers import config_per_platform, config_validation as cv
+from homeassistant.helpers.script import (
+    SCRIPT_MODE_SINGLE,
+    async_validate_actions_config,
+    make_script_schema,
+)
+from homeassistant.helpers.selector import validate_selector
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.util.yaml.input import UndefinedSubstitution
 
-from . import DOMAIN, SCRIPT_ENTRY_SCHEMA
+from .const import (
+    CONF_ADVANCED,
+    CONF_EXAMPLE,
+    CONF_FIELDS,
+    CONF_REQUIRED,
+    CONF_TRACE,
+    DOMAIN,
+    LOGGER,
+)
+from .helpers import async_get_blueprints
+
+PACKAGE_MERGE_HINT = "dict"
+
+SCRIPT_ENTITY_SCHEMA = make_script_schema(
+    {
+        vol.Optional(CONF_ALIAS): cv.string,
+        vol.Optional(CONF_TRACE, default={}): TRACE_CONFIG_SCHEMA,
+        vol.Optional(CONF_ICON): cv.icon,
+        vol.Required(CONF_SEQUENCE): cv.SCRIPT_SCHEMA,
+        vol.Optional(CONF_DESCRIPTION, default=""): cv.string,
+        vol.Optional(CONF_VARIABLES): cv.SCRIPT_VARIABLES_SCHEMA,
+        vol.Optional(CONF_FIELDS, default={}): {
+            cv.string: {
+                vol.Optional(CONF_ADVANCED, default=False): cv.boolean,
+                vol.Optional(CONF_DEFAULT): cv.match_all,
+                vol.Optional(CONF_DESCRIPTION): cv.string,
+                vol.Optional(CONF_EXAMPLE): cv.string,
+                vol.Optional(CONF_NAME): cv.string,
+                vol.Optional(CONF_REQUIRED, default=False): cv.boolean,
+                vol.Optional(CONF_SELECTOR): validate_selector,
+            }
+        },
+    },
+    SCRIPT_MODE_SINGLE,
+)
 
 
-async def async_validate_config_item(hass, config, full_config=None):
+async def _async_validate_config_item(
+    hass: HomeAssistant, object_id: str, config: ConfigType, warn_on_errors: bool
+) -> ScriptConfig:
     """Validate config item."""
-    config = SCRIPT_ENTRY_SCHEMA(config)
-    config[CONF_SEQUENCE] = await asyncio.gather(
-        *[
-            async_validate_action_config(hass, action)
-            for action in config[CONF_SEQUENCE]
-        ]
-    )
+    raw_config = None
+    raw_blueprint_inputs = None
+    uses_blueprint = False
+    with suppress(ValueError):  # Invalid config
+        raw_config = dict(config)
 
-    return config
+    def _log_invalid_script(
+        err: Exception,
+        script_name: str,
+        problem: str,
+        data: Any,
+    ) -> None:
+        """Log an error about invalid script."""
+        if not warn_on_errors:
+            return
 
+        if uses_blueprint:
+            LOGGER.error(
+                "Blueprint '%s' generated invalid script with inputs %s: %s",
+                blueprint_inputs.blueprint.name,
+                blueprint_inputs.inputs,
+                humanize_error(data, err) if isinstance(err, vol.Invalid) else err,
+            )
+            return
 
-async def _try_async_validate_config_item(hass, object_id, config, full_config=None):
-    """Validate config item."""
+        LOGGER.error(
+            "%s %s and has been disabled: %s",
+            script_name,
+            problem,
+            humanize_error(data, err) if isinstance(err, vol.Invalid) else err,
+        )
+        return
+
+    if is_blueprint_instance_config(config):
+        uses_blueprint = True
+        blueprints = async_get_blueprints(hass)
+        try:
+            blueprint_inputs = await blueprints.async_inputs_from_config(config)
+        except BlueprintException as err:
+            if warn_on_errors:
+                LOGGER.error(
+                    "Failed to generate script from blueprint: %s",
+                    err,
+                )
+            raise
+
+        raw_blueprint_inputs = blueprint_inputs.config_with_inputs
+
+        try:
+            config = blueprint_inputs.async_substitute()
+            raw_config = dict(config)
+        except UndefinedSubstitution as err:
+            if warn_on_errors:
+                LOGGER.error(
+                    "Blueprint '%s' failed to generate script with inputs %s: %s",
+                    blueprint_inputs.blueprint.name,
+                    blueprint_inputs.inputs,
+                    err,
+                )
+            raise HomeAssistantError from err
+
+    script_name = f"Script with object id '{object_id}'"
+    if isinstance(config, Mapping):
+        if CONF_ALIAS in config:
+            script_name = f"Script with alias '{config[CONF_ALIAS]}'"
+
     try:
         cv.slug(object_id)
-        config = await async_validate_config_item(hass, config, full_config)
-    except (vol.Invalid, HomeAssistantError) as ex:
-        async_log_exception(ex, DOMAIN, full_config or config, hass)
+    except vol.Invalid as err:
+        _log_invalid_script(err, script_name, "has invalid object id", object_id)
+        raise
+    try:
+        validated_config = SCRIPT_ENTITY_SCHEMA(config)
+    except vol.Invalid as err:
+        _log_invalid_script(err, script_name, "could not be validated", config)
+        raise
+
+    try:
+        validated_config[CONF_SEQUENCE] = await async_validate_actions_config(
+            hass, validated_config[CONF_SEQUENCE]
+        )
+    except (
+        vol.Invalid,
+        HomeAssistantError,
+    ) as err:
+        _log_invalid_script(
+            err, script_name, "failed to setup actions", validated_config
+        )
+        raise
+
+    script_config = ScriptConfig(validated_config)
+    script_config.raw_blueprint_inputs = raw_blueprint_inputs
+    script_config.raw_config = raw_config
+    return script_config
+
+
+class ScriptConfig(dict):
+    """Dummy class to allow adding attributes."""
+
+    raw_config: ConfigType | None = None
+    raw_blueprint_inputs: ConfigType | None = None
+
+
+async def _try_async_validate_config_item(
+    hass: HomeAssistant,
+    object_id: str,
+    config: ConfigType,
+) -> ScriptConfig | None:
+    """Validate config item."""
+    try:
+        return await _async_validate_config_item(hass, object_id, config, True)
+    except (vol.Invalid, HomeAssistantError):
         return None
 
-    return config
+
+async def async_validate_config_item(
+    hass: HomeAssistant,
+    object_id: str,
+    config: dict[str, Any],
+) -> ScriptConfig | None:
+    """Validate config item, called by EditScriptConfigView."""
+    return await _async_validate_config_item(hass, object_id, config, False)
 
 
 async def async_validate_config(hass, config):
     """Validate config."""
-    if DOMAIN in config:
-        validated_config = {}
-        for object_id, cfg in config[DOMAIN].items():
-            cfg = await _try_async_validate_config_item(hass, object_id, cfg, config)
+    scripts = {}
+    for _, p_config in config_per_platform(config, DOMAIN):
+        for object_id, cfg in p_config.items():
+            if object_id in scripts:
+                LOGGER.warning("Duplicate script detected with name: '%s'", object_id)
+                continue
+            cfg = await _try_async_validate_config_item(hass, object_id, cfg)
             if cfg is not None:
-                validated_config[object_id] = cfg
-        config[DOMAIN] = validated_config
+                scripts[object_id] = cfg
+
+    # Create a copy of the configuration with all config for current
+    # component removed and add validated config back in.
+    config = config_without_domain(config, DOMAIN)
+    config[DOMAIN] = scripts
 
     return config

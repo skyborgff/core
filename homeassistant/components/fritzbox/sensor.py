@@ -1,89 +1,238 @@
-"""Support for AVM Fritz!Box smarthome temperature sensor only devices."""
-import requests
+"""Support for AVM FRITZ!SmartHome temperature sensor only devices."""
+from __future__ import annotations
 
-from homeassistant.const import CONF_DEVICES, TEMP_CELSIUS
-from homeassistant.helpers.entity import Entity
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Final
 
-from .const import (
-    ATTR_STATE_DEVICE_LOCKED,
-    ATTR_STATE_LOCKED,
-    CONF_CONNECTIONS,
-    DOMAIN as FRITZBOX_DOMAIN,
-    LOGGER,
+from pyfritzhome.fritzhomedevice import FritzhomeDevice
+
+from homeassistant.components.climate import PRESET_COMFORT, PRESET_ECO
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import StateType
+from homeassistant.util.dt import utc_from_timestamp
+
+from . import FritzBoxDeviceEntity
+from .const import CONF_COORDINATOR, DOMAIN as FRITZBOX_DOMAIN
+from .model import FritzEntityDescriptionMixinBase
+
+
+@dataclass
+class FritzEntityDescriptionMixinSensor(FritzEntityDescriptionMixinBase):
+    """Sensor description mixin for Fritz!Smarthome entities."""
+
+    native_value: Callable[[FritzhomeDevice], StateType | datetime]
+
+
+@dataclass
+class FritzSensorEntityDescription(
+    SensorEntityDescription, FritzEntityDescriptionMixinSensor
+):
+    """Description for Fritz!Smarthome sensor entities."""
+
+
+def suitable_eco_temperature(device: FritzhomeDevice) -> bool:
+    """Check suitablity for eco temperature sensor."""
+    return device.has_thermostat and device.eco_temperature is not None
+
+
+def suitable_comfort_temperature(device: FritzhomeDevice) -> bool:
+    """Check suitablity for comfort temperature sensor."""
+    return device.has_thermostat and device.comfort_temperature is not None
+
+
+def suitable_nextchange_temperature(device: FritzhomeDevice) -> bool:
+    """Check suitablity for next scheduled temperature sensor."""
+    return device.has_thermostat and device.nextchange_temperature is not None
+
+
+def suitable_nextchange_time(device: FritzhomeDevice) -> bool:
+    """Check suitablity for next scheduled changed time sensor."""
+    return device.has_thermostat and device.nextchange_endperiod is not None
+
+
+def suitable_temperature(device: FritzhomeDevice) -> bool:
+    """Check suitablity for temperature sensor."""
+    return device.has_temperature_sensor and not device.has_thermostat
+
+
+def value_electric_current(device: FritzhomeDevice) -> float:
+    """Return native value for electric current sensor."""
+    if (
+        isinstance(device.power, int)
+        and isinstance(device.voltage, int)
+        and device.voltage > 0
+    ):
+        return round(device.power / device.voltage, 3)
+    return 0.0
+
+
+def value_nextchange_preset(device: FritzhomeDevice) -> str:
+    """Return native value for next scheduled preset sensor."""
+    if device.nextchange_temperature == device.eco_temperature:
+        return PRESET_ECO
+    return PRESET_COMFORT
+
+
+def value_scheduled_preset(device: FritzhomeDevice) -> str:
+    """Return native value for current scheduled preset sensor."""
+    if device.nextchange_temperature == device.eco_temperature:
+        return PRESET_COMFORT
+    return PRESET_ECO
+
+
+SENSOR_TYPES: Final[tuple[FritzSensorEntityDescription, ...]] = (
+    FritzSensorEntityDescription(
+        key="temperature",
+        name="Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suitable=suitable_temperature,
+        native_value=lambda device: device.temperature,  # type: ignore[no-any-return]
+    ),
+    FritzSensorEntityDescription(
+        key="humidity",
+        name="Humidity",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.HUMIDITY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suitable=lambda device: device.rel_humidity is not None,
+        native_value=lambda device: device.rel_humidity,  # type: ignore[no-any-return]
+    ),
+    FritzSensorEntityDescription(
+        key="battery",
+        name="Battery",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suitable=lambda device: device.battery_level is not None,
+        native_value=lambda device: device.battery_level,  # type: ignore[no-any-return]
+    ),
+    FritzSensorEntityDescription(
+        key="power_consumption",
+        name="Power Consumption",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suitable=lambda device: device.has_powermeter,  # type: ignore[no-any-return]
+        native_value=lambda device: round((device.power or 0.0) / 1000, 3),
+    ),
+    FritzSensorEntityDescription(
+        key="voltage",
+        name="Voltage",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suitable=lambda device: device.has_powermeter,  # type: ignore[no-any-return]
+        native_value=lambda device: round((device.voltage or 0.0) / 1000, 2),
+    ),
+    FritzSensorEntityDescription(
+        key="electric_current",
+        name="Electric Current",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suitable=lambda device: device.has_powermeter,  # type: ignore[no-any-return]
+        native_value=value_electric_current,
+    ),
+    FritzSensorEntityDescription(
+        key="total_energy",
+        name="Total Energy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suitable=lambda device: device.has_powermeter,  # type: ignore[no-any-return]
+        native_value=lambda device: (device.energy or 0.0) / 1000,
+    ),
+    # Thermostat Sensors
+    FritzSensorEntityDescription(
+        key="comfort_temperature",
+        name="Comfort Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        suitable=suitable_comfort_temperature,
+        native_value=lambda device: device.comfort_temperature,  # type: ignore[no-any-return]
+    ),
+    FritzSensorEntityDescription(
+        key="eco_temperature",
+        name="Eco Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        suitable=suitable_eco_temperature,
+        native_value=lambda device: device.eco_temperature,  # type: ignore[no-any-return]
+    ),
+    FritzSensorEntityDescription(
+        key="nextchange_temperature",
+        name="Next Scheduled Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        suitable=suitable_nextchange_temperature,
+        native_value=lambda device: device.nextchange_temperature,  # type: ignore[no-any-return]
+    ),
+    FritzSensorEntityDescription(
+        key="nextchange_time",
+        name="Next Scheduled Change Time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        suitable=suitable_nextchange_time,
+        native_value=lambda device: utc_from_timestamp(device.nextchange_endperiod),
+    ),
+    FritzSensorEntityDescription(
+        key="nextchange_preset",
+        name="Next Scheduled Preset",
+        suitable=suitable_nextchange_temperature,
+        native_value=value_nextchange_preset,
+    ),
+    FritzSensorEntityDescription(
+        key="scheduled_preset",
+        name="Current Scheduled Preset",
+        suitable=suitable_nextchange_temperature,
+        native_value=value_scheduled_preset,
+    ),
 )
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Set up the Fritzbox smarthome sensor from config_entry."""
-    entities = []
-    devices = hass.data[FRITZBOX_DOMAIN][CONF_DEVICES]
-    fritz = hass.data[FRITZBOX_DOMAIN][CONF_CONNECTIONS][config_entry.entry_id]
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up the FRITZ!SmartHome sensor from ConfigEntry."""
+    coordinator = hass.data[FRITZBOX_DOMAIN][entry.entry_id][CONF_COORDINATOR]
 
-    for device in await hass.async_add_executor_job(fritz.get_devices):
-        if (
-            device.has_temperature_sensor
-            and not device.has_switch
-            and not device.has_thermostat
-            and device.ain not in devices
-        ):
-            entities.append(FritzBoxTempSensor(device, fritz))
-            devices.add(device.ain)
-
-    async_add_entities(entities)
+    async_add_entities(
+        [
+            FritzBoxSensor(coordinator, ain, description)
+            for ain, device in coordinator.data.devices.items()
+            for description in SENSOR_TYPES
+            if description.suitable(device)
+        ]
+    )
 
 
-class FritzBoxTempSensor(Entity):
-    """The entity class for Fritzbox temperature sensors."""
+class FritzBoxSensor(FritzBoxDeviceEntity, SensorEntity):
+    """The entity class for FRITZ!SmartHome sensors."""
 
-    def __init__(self, device, fritz):
-        """Initialize the switch."""
-        self._device = device
-        self._fritz = fritz
+    entity_description: FritzSensorEntityDescription
 
     @property
-    def device_info(self):
-        """Return device specific attributes."""
-        return {
-            "name": self.name,
-            "identifiers": {(FRITZBOX_DOMAIN, self._device.ain)},
-            "manufacturer": self._device.manufacturer,
-            "model": self._device.productname,
-            "sw_version": self._device.fw_version,
-        }
-
-    @property
-    def unique_id(self):
-        """Return the unique ID of the device."""
-        return self._device.ain
-
-    @property
-    def name(self):
-        """Return the name of the device."""
-        return self._device.name
-
-    @property
-    def state(self):
+    def native_value(self) -> StateType | datetime:
         """Return the state of the sensor."""
-        return self._device.temperature
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return TEMP_CELSIUS
-
-    def update(self):
-        """Get latest data and states from the device."""
-        try:
-            self._device.update()
-        except requests.exceptions.HTTPError as ex:
-            LOGGER.warning("Fritzhome connection error: %s", ex)
-            self._fritz.login()
-
-    @property
-    def device_state_attributes(self):
-        """Return the state attributes of the device."""
-        attrs = {
-            ATTR_STATE_DEVICE_LOCKED: self._device.device_lock,
-            ATTR_STATE_LOCKED: self._device.lock,
-        }
-        return attrs
+        return self.entity_description.native_value(self.data)

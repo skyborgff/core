@@ -1,8 +1,8 @@
-config/*
+/config
 config2/*
 
 tests/testing_config/deps
-tests/testing_config/home-assistant.log
+tests/testing_config/home-assistant.log*
 
 # hass-release
 data/
@@ -58,7 +58,6 @@ pip-log.txt
 
 # Unit test / coverage reports
 .coverage
-.tox
 coverage.xml
 nosetests.xml
 htmlcov/

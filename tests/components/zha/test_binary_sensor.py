@@ -1,11 +1,12 @@
 """Test zha binary sensor."""
+from unittest.mock import patch
+
 import pytest
 import zigpy.profiles.zha
 import zigpy.zcl.clusters.measurement as measurement
 import zigpy.zcl.clusters.security as security
 
-from homeassistant.components.binary_sensor import DOMAIN
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, Platform
 
 from .common import (
     async_enable_traffic,
@@ -13,23 +14,41 @@ from .common import (
     find_entity_id,
     send_attributes_report,
 )
+from .conftest import SIG_EP_INPUT, SIG_EP_OUTPUT, SIG_EP_PROFILE, SIG_EP_TYPE
 
 DEVICE_IAS = {
     1: {
-        "device_type": zigpy.profiles.zha.DeviceType.IAS_ZONE,
-        "in_clusters": [security.IasZone.cluster_id],
-        "out_clusters": [],
+        SIG_EP_PROFILE: zigpy.profiles.zha.PROFILE_ID,
+        SIG_EP_TYPE: zigpy.profiles.zha.DeviceType.IAS_ZONE,
+        SIG_EP_INPUT: [security.IasZone.cluster_id],
+        SIG_EP_OUTPUT: [],
     }
 }
 
 
 DEVICE_OCCUPANCY = {
     1: {
-        "device_type": zigpy.profiles.zha.DeviceType.OCCUPANCY_SENSOR,
-        "in_clusters": [measurement.OccupancySensing.cluster_id],
-        "out_clusters": [],
+        SIG_EP_PROFILE: zigpy.profiles.zha.PROFILE_ID,
+        SIG_EP_TYPE: zigpy.profiles.zha.DeviceType.OCCUPANCY_SENSOR,
+        SIG_EP_INPUT: [measurement.OccupancySensing.cluster_id],
+        SIG_EP_OUTPUT: [],
     }
 }
+
+
+@pytest.fixture(autouse=True)
+def binary_sensor_platform_only():
+    """Only setup the binary_sensor and required base platforms to speed up tests."""
+    with patch(
+        "homeassistant.components.zha.PLATFORMS",
+        (
+            Platform.BINARY_SENSOR,
+            Platform.DEVICE_TRACKER,
+            Platform.NUMBER,
+            Platform.SELECT,
+        ),
+    ):
+        yield
 
 
 async def async_test_binary_sensor_on_off(hass, cluster, entity_id):
@@ -75,7 +94,7 @@ async def test_binary_sensor(
     """Test ZHA binary_sensor platform."""
     zigpy_device = zigpy_device_mock(device)
     zha_device = await zha_device_joined_restored(zigpy_device)
-    entity_id = await find_entity_id(DOMAIN, zha_device, hass)
+    entity_id = await find_entity_id(Platform.BINARY_SENSOR, zha_device, hass)
     assert entity_id is not None
 
     assert hass.states.get(entity_id).state == STATE_OFF

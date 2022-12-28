@@ -36,5 +36,33 @@ async def async_setup_platform(
 class MockLight(MockToggleEntity, LightEntity):
     """Mock light class."""
 
-    brightness = None
+    color_mode = None
+    _attr_max_color_temp_kelvin = 6500
+    _attr_min_color_temp_kelvin = 2000
+    supported_color_modes = None
     supported_features = 0
+
+    brightness = None
+    color_temp_kelvin = None
+    hs_color = None
+    rgb_color = None
+    rgbw_color = None
+    rgbww_color = None
+    xy_color = None
+
+    def turn_on(self, **kwargs):
+        """Turn the entity on."""
+        super().turn_on(**kwargs)
+        for key, value in kwargs.items():
+            if key in [
+                "brightness",
+                "hs_color",
+                "xy_color",
+                "rgb_color",
+                "rgbw_color",
+                "rgbww_color",
+                "color_temp_kelvin",
+            ]:
+                setattr(self, key, value)
+            if key == "white":
+                setattr(self, "brightness", value)

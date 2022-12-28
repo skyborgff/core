@@ -1,13 +1,22 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Host is al geconfigureerd."
+            "already_configured": "Apparaat is al geconfigureerd",
+            "reauth_successful": "Herauthenticatie geslaagd"
         },
         "error": {
-            "cannot_connect": "Kan geen verbinding maken met host",
+            "cannot_connect": "Kan geen verbinding maken",
+            "invalid_auth": "Ongeldige authenticatie",
             "name_exists": "Naam bestaat al"
         },
         "step": {
+            "reauth_confirm": {
+                "data": {
+                    "password": "Wachtwoord"
+                },
+                "description": "Het wachtwoord voor {username} is onjuist.",
+                "title": "Integratie herauthenticeren"
+            },
             "user": {
                 "data": {
                     "host": "Host",
@@ -24,6 +33,8 @@
         "step": {
             "init": {
                 "data": {
+                    "limit": "Limiet",
+                    "order": "Bestel",
                     "scan_interval": "Update frequentie"
                 },
                 "title": "Configureer de opties voor Transmission"

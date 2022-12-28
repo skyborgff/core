@@ -1,9 +1,15 @@
 """Config flow for FireServiceRota."""
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
 from pyfireservicerota import FireServiceRota, InvalidAuthError
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_TOKEN, CONF_URL, CONF_USERNAME
+from homeassistant.data_entry_flow import FlowResult
 
 from .const import DOMAIN, URL_LIST
 
@@ -20,7 +26,6 @@ class FireServiceRotaFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a FireServiceRota config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     def __init__(self):
         """Initialize config flow."""
@@ -82,11 +87,10 @@ class FireServiceRotaFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if step_id == "user":
             return self.async_create_entry(title=self._username, data=data)
 
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            if entry.unique_id == self.unique_id:
-                self.hass.config_entries.async_update_entry(entry, data=data)
-                await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
+        entry = await self.async_set_unique_id(self.unique_id)
+        self.hass.config_entries.async_update_entry(entry, data=data)
+        await self.hass.config_entries.async_reload(entry.entry_id)
+        return self.async_abort(reason="reauth_successful")
 
     def _show_setup_form(self, user_input=None, errors=None, step_id="user"):
         """Show the setup form to the user."""
@@ -112,18 +116,18 @@ class FireServiceRotaFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders=self._description_placeholders,
         )
 
-    async def async_step_reauth(self, user_input=None):
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
+        """Initialise re-authentication."""
+        await self.async_set_unique_id(entry_data[CONF_USERNAME])
+        self._existing_entry = {**entry_data}
+        self._description_placeholders = {CONF_USERNAME: entry_data[CONF_USERNAME]}
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, str] | None = None
+    ) -> FlowResult:
         """Get new tokens for a config entry that can't authenticate."""
-
-        if not self._existing_entry:
-            await self.async_set_unique_id(user_input[CONF_USERNAME])
-            self._existing_entry = user_input.copy()
-            self._description_placeholders = {"username": user_input[CONF_USERNAME]}
-            user_input = None
-
         if user_input is None:
-            return self._show_setup_form(step_id=config_entries.SOURCE_REAUTH)
+            return self._show_setup_form(step_id="reauth_confirm")
 
-        return await self._validate_and_create_entry(
-            user_input, config_entries.SOURCE_REAUTH
-        )
+        return await self._validate_and_create_entry(user_input, "reauth_confirm")

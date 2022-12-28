@@ -1,16 +1,11 @@
 """Netatmo Media Source Implementation."""
+from __future__ import annotations
+
 import datetime as dt
 import logging
 import re
-from typing import Optional, Tuple
 
-from homeassistant.components.media_player.const import (
-    MEDIA_CLASS_DIRECTORY,
-    MEDIA_CLASS_VIDEO,
-    MEDIA_TYPE_VIDEO,
-)
-from homeassistant.components.media_player.errors import BrowseError
-from homeassistant.components.media_source.const import MEDIA_MIME_TYPES
+from homeassistant.components.media_player import BrowseError, MediaClass, MediaType
 from homeassistant.components.media_source.error import MediaSourceError, Unresolvable
 from homeassistant.components.media_source.models import (
     BrowseMediaSource,
@@ -30,7 +25,7 @@ class IncompatibleMediaSource(MediaSourceError):
     """Incompatible media source attributes."""
 
 
-async def async_get_media_source(hass: HomeAssistant):
+async def async_get_media_source(hass: HomeAssistant) -> NetatmoSource:
     """Set up Netatmo media source."""
     return NetatmoSource(hass)
 
@@ -40,7 +35,7 @@ class NetatmoSource(MediaSource):
 
     name: str = MANUFACTURER
 
-    def __init__(self, hass: HomeAssistant):
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize Netatmo source."""
         super().__init__(DOMAIN)
         self.hass = hass
@@ -52,9 +47,7 @@ class NetatmoSource(MediaSource):
         url = self.events[camera_id][event_id]["media_url"]
         return PlayMedia(url, MIME_TYPE)
 
-    async def async_browse_media(
-        self, item: MediaSourceItem, media_types: Tuple[str] = MEDIA_MIME_TYPES
-    ) -> BrowseMediaSource:
+    async def async_browse_media(self, item: MediaSourceItem) -> BrowseMediaSource:
         """Return media."""
         try:
             source, camera_id, event_id = async_parse_identifier(item)
@@ -64,7 +57,7 @@ class NetatmoSource(MediaSource):
         return self._browse_media(source, camera_id, event_id)
 
     def _browse_media(
-        self, source: str, camera_id: str, event_id: int
+        self, source: str, camera_id: str, event_id: int | None
     ) -> BrowseMediaSource:
         """Browse media."""
         if camera_id and camera_id not in self.events:
@@ -76,24 +69,16 @@ class NetatmoSource(MediaSource):
         return self._build_item_response(source, camera_id, event_id)
 
     def _build_item_response(
-        self, source: str, camera_id: str, event_id: int = None
+        self, source: str, camera_id: str, event_id: int | None = None
     ) -> BrowseMediaSource:
         if event_id and event_id in self.events[camera_id]:
-            created = dt.datetime.fromtimestamp(event_id)
-            if self.events[camera_id][event_id]["type"] == "outdoor":
-                thumbnail = (
-                    self.events[camera_id][event_id]["event_list"][0]
-                    .get("snapshot", {})
-                    .get("url")
-                )
-                message = remove_html_tags(
-                    self.events[camera_id][event_id]["event_list"][0]["message"]
-                )
-            else:
-                thumbnail = (
-                    self.events[camera_id][event_id].get("snapshot", {}).get("url")
-                )
-                message = remove_html_tags(self.events[camera_id][event_id]["message"])
+            created = dt.datetime.fromtimestamp(
+                self.events[camera_id][event_id]["event_time"]
+            )
+            thumbnail = self.events[camera_id][event_id].get("snapshot", {}).get("url")
+            message = remove_html_tags(
+                self.events[camera_id][event_id].get("message", "")
+            )
             title = f"{created} - {message}"
         else:
             title = self.hass.data[DOMAIN][DATA_CAMERAS].get(camera_id, MANUFACTURER)
@@ -104,13 +89,13 @@ class NetatmoSource(MediaSource):
         else:
             path = f"{source}/{camera_id}"
 
-        media_class = MEDIA_CLASS_DIRECTORY if event_id is None else MEDIA_CLASS_VIDEO
+        media_class = MediaClass.DIRECTORY if event_id is None else MediaClass.VIDEO
 
         media = BrowseMediaSource(
             domain=DOMAIN,
             identifier=path,
             media_class=media_class,
-            media_content_type=MEDIA_TYPE_VIDEO,
+            media_content_type=MediaType.VIDEO,
             title=title,
             can_play=bool(
                 event_id and self.events[camera_id][event_id].get("media_url")
@@ -147,7 +132,7 @@ class NetatmoSource(MediaSource):
         return media
 
 
-def remove_html_tags(text):
+def remove_html_tags(text: str) -> str:
     """Remove html tags from string."""
     clean = re.compile("<.*?>")
     return re.sub(clean, "", text)
@@ -156,9 +141,9 @@ def remove_html_tags(text):
 @callback
 def async_parse_identifier(
     item: MediaSourceItem,
-) -> Tuple[str, str, Optional[int]]:
+) -> tuple[str, str, int | None]:
     """Parse identifier."""
-    if not item.identifier:
+    if not item.identifier or "/" not in item.identifier:
         return "events", "", None
 
     source, path = item.identifier.lstrip("/").split("/", 1)

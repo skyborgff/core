@@ -1,31 +1,123 @@
 """HomeKit session fixtures."""
-from pyhap.accessory_driver import AccessoryDriver
+from contextlib import suppress
+import os
+from unittest.mock import patch
+
 import pytest
 
-from homeassistant.components.homekit.const import EVENT_HOMEKIT_CHANGED
-from homeassistant.core import callback as ha_callback
+from homeassistant.components.device_tracker.legacy import YAML_DEVICES
+from homeassistant.components.homekit.accessories import HomeDriver
+from homeassistant.components.homekit.const import BRIDGE_NAME, EVENT_HOMEKIT_CHANGED
+from homeassistant.components.homekit.iidmanager import AccessoryIIDStorage
 
-from tests.async_mock import patch
+from tests.common import async_capture_events, mock_device_registry, mock_registry
 
 
 @pytest.fixture
-def hk_driver(loop):
-    """Return a custom AccessoryDriver instance for HomeKit accessory init."""
-    with patch("pyhap.accessory_driver.Zeroconf"), patch(
+def iid_storage(hass):
+    """Mock the iid storage."""
+    with patch.object(AccessoryIIDStorage, "_async_schedule_save"):
+        yield AccessoryIIDStorage(hass, "")
+
+
+@pytest.fixture()
+def run_driver(hass, event_loop, iid_storage):
+    """Return a custom AccessoryDriver instance for HomeKit accessory init.
+
+    This mock does not mock async_stop, so the driver will not be stopped
+    """
+    with patch("pyhap.accessory_driver.AsyncZeroconf"), patch(
         "pyhap.accessory_driver.AccessoryEncoder"
     ), patch("pyhap.accessory_driver.HAPServer"), patch(
         "pyhap.accessory_driver.AccessoryDriver.publish"
     ), patch(
         "pyhap.accessory_driver.AccessoryDriver.persist"
     ):
-        yield AccessoryDriver(pincode=b"123-45-678", address="127.0.0.1", loop=loop)
+        yield HomeDriver(
+            hass,
+            pincode=b"123-45-678",
+            entry_id="",
+            entry_title="mock entry",
+            bridge_name=BRIDGE_NAME,
+            iid_storage=iid_storage,
+            address="127.0.0.1",
+            loop=event_loop,
+        )
+
+
+@pytest.fixture
+def hk_driver(hass, event_loop, iid_storage):
+    """Return a custom AccessoryDriver instance for HomeKit accessory init."""
+    with patch("pyhap.accessory_driver.AsyncZeroconf"), patch(
+        "pyhap.accessory_driver.AccessoryEncoder"
+    ), patch("pyhap.accessory_driver.HAPServer.async_stop"), patch(
+        "pyhap.accessory_driver.HAPServer.async_start"
+    ), patch(
+        "pyhap.accessory_driver.AccessoryDriver.publish"
+    ), patch(
+        "pyhap.accessory_driver.AccessoryDriver.persist"
+    ):
+        yield HomeDriver(
+            hass,
+            pincode=b"123-45-678",
+            entry_id="",
+            entry_title="mock entry",
+            bridge_name=BRIDGE_NAME,
+            iid_storage=iid_storage,
+            address="127.0.0.1",
+            loop=event_loop,
+        )
+
+
+@pytest.fixture
+def mock_hap(hass, event_loop, iid_storage, mock_zeroconf):
+    """Return a custom AccessoryDriver instance for HomeKit accessory init."""
+    with patch("pyhap.accessory_driver.AsyncZeroconf"), patch(
+        "pyhap.accessory_driver.AccessoryEncoder"
+    ), patch("pyhap.accessory_driver.HAPServer.async_stop"), patch(
+        "pyhap.accessory_driver.HAPServer.async_start"
+    ), patch(
+        "pyhap.accessory_driver.AccessoryDriver.publish"
+    ), patch(
+        "pyhap.accessory_driver.AccessoryDriver.async_start"
+    ), patch(
+        "pyhap.accessory_driver.AccessoryDriver.async_stop"
+    ), patch(
+        "pyhap.accessory_driver.AccessoryDriver.persist"
+    ):
+        yield HomeDriver(
+            hass,
+            pincode=b"123-45-678",
+            entry_id="",
+            entry_title="mock entry",
+            bridge_name=BRIDGE_NAME,
+            iid_storage=iid_storage,
+            address="127.0.0.1",
+            loop=event_loop,
+        )
 
 
 @pytest.fixture
 def events(hass):
     """Yield caught homekit_changed events."""
-    events = []
-    hass.bus.async_listen(
-        EVENT_HOMEKIT_CHANGED, ha_callback(lambda e: events.append(e))
-    )
-    yield events
+    return async_capture_events(hass, EVENT_HOMEKIT_CHANGED)
+
+
+@pytest.fixture(name="device_reg")
+def device_reg_fixture(hass):
+    """Return an empty, loaded, registry."""
+    return mock_device_registry(hass)
+
+
+@pytest.fixture(name="entity_reg")
+def entity_reg_fixture(hass):
+    """Return an empty, loaded, registry."""
+    return mock_registry(hass)
+
+
+@pytest.fixture
+def demo_cleanup(hass):
+    """Clean up device tracker demo file."""
+    yield
+    with suppress(FileNotFoundError):
+        os.remove(hass.config.path(YAML_DEVICES))

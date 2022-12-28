@@ -1,10 +1,12 @@
 """Tests for the PS4 Integration."""
+from unittest.mock import MagicMock, patch
+
 from homeassistant import config_entries, data_entry_flow
 from homeassistant.components import ps4
-from homeassistant.components.media_player.const import (
+from homeassistant.components.media_player import (
     ATTR_MEDIA_CONTENT_TYPE,
     ATTR_MEDIA_TITLE,
-    MEDIA_TYPE_GAME,
+    MediaType,
 )
 from homeassistant.components.ps4.const import (
     ATTR_MEDIA_IMAGE_URL,
@@ -27,7 +29,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.setup import async_setup_component
 from homeassistant.util import location
 
-from tests.async_mock import MagicMock, patch
 from tests.common import MockConfigEntry, mock_registry
 
 MOCK_HOST = "192.168.0.1"
@@ -42,9 +43,10 @@ MOCK_DATA = {CONF_TOKEN: MOCK_CREDS, "devices": [MOCK_DEVICE]}
 MOCK_FLOW_RESULT = {
     "version": VERSION,
     "handler": DOMAIN,
-    "type": data_entry_flow.RESULT_TYPE_CREATE_ENTRY,
+    "type": data_entry_flow.FlowResultType.CREATE_ENTRY,
     "title": "test_ps4",
     "data": MOCK_DATA,
+    "options": {},
 }
 
 MOCK_ENTRY_ID = "SomeID"
@@ -54,7 +56,7 @@ MOCK_CONFIG = MockConfigEntry(domain=DOMAIN, data=MOCK_DATA, entry_id=MOCK_ENTRY
 MOCK_LOCATION = location.LocationInfo(
     "0.0.0.0",
     "US",
-    "United States",
+    "USD",
     "CA",
     "California",
     "San Diego",
@@ -84,20 +86,20 @@ MOCK_UNIQUE_ID = "someuniqueid"
 MOCK_ID = "CUSA00123"
 MOCK_URL = "http://someurl.jpeg"
 MOCK_TITLE = "Some Title"
-MOCK_TYPE = MEDIA_TYPE_GAME
+MOCK_TYPE = MediaType.GAME
 
 MOCK_GAMES_DATA_OLD_STR_FORMAT = {"mock_id": "mock_title", "mock_id2": "mock_title2"}
 
 MOCK_GAMES_DATA = {
     ATTR_LOCKED: False,
-    ATTR_MEDIA_CONTENT_TYPE: MEDIA_TYPE_GAME,
+    ATTR_MEDIA_CONTENT_TYPE: MediaType.GAME,
     ATTR_MEDIA_IMAGE_URL: MOCK_URL,
     ATTR_MEDIA_TITLE: MOCK_TITLE,
 }
 
 MOCK_GAMES_DATA_LOCKED = {
     ATTR_LOCKED: True,
-    ATTR_MEDIA_CONTENT_TYPE: MEDIA_TYPE_GAME,
+    ATTR_MEDIA_CONTENT_TYPE: MediaType.GAME,
     ATTR_MEDIA_IMAGE_URL: MOCK_URL,
     ATTR_MEDIA_TITLE: MOCK_TITLE,
 }
@@ -123,7 +125,7 @@ async def test_creating_entry_sets_up_media_player(hass):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
-        assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
+        assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
 
         await hass.async_block_till_done()
 
@@ -153,7 +155,7 @@ async def test_config_flow_entry_migrate(hass):
         "homeassistant.util.location.async_detect_location_info",
         return_value=MOCK_LOCATION,
     ), patch(
-        "homeassistant.helpers.entity_registry.async_get_registry",
+        "homeassistant.helpers.entity_registry.async_get",
         return_value=mock_e_registry,
     ):
         await ps4.async_migrate_entry(hass, mock_entry)
@@ -169,7 +171,7 @@ async def test_config_flow_entry_migrate(hass):
     assert mock_entity.device_id == MOCK_DEVICE_ID
 
     # Test that last four of credentials is appended to the unique_id.
-    assert mock_entity.unique_id == "{}_{}".format(MOCK_UNIQUE_ID, MOCK_CREDS[-4:])
+    assert mock_entity.unique_id == f"{MOCK_UNIQUE_ID}_{MOCK_CREDS[-4:]}"
 
     # Test that config entry is at the current version.
     assert mock_entry.version == VERSION
@@ -213,7 +215,7 @@ def test_games_reformat_to_dict(hass):
         assert mock_data
         assert mock_data[ATTR_MEDIA_IMAGE_URL] is None
         assert mock_data[ATTR_LOCKED] is False
-        assert mock_data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_GAME
+        assert mock_data[ATTR_MEDIA_CONTENT_TYPE] == MediaType.GAME
 
 
 def test_load_games(hass):
@@ -232,7 +234,7 @@ def test_load_games(hass):
     assert mock_data[ATTR_MEDIA_TITLE] == MOCK_TITLE
     assert mock_data[ATTR_MEDIA_IMAGE_URL] == MOCK_URL
     assert mock_data[ATTR_LOCKED] is False
-    assert mock_data[ATTR_MEDIA_CONTENT_TYPE] == MEDIA_TYPE_GAME
+    assert mock_data[ATTR_MEDIA_CONTENT_TYPE] == MediaType.GAME
 
 
 def test_loading_games_returns_dict(hass):

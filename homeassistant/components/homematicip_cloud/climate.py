@@ -1,30 +1,33 @@
 """Support for HomematicIP Cloud climate devices."""
-from typing import Any, Dict, List, Optional, Union
+from __future__ import annotations
 
-from homematicip.aio.device import AsyncHeatingThermostat, AsyncHeatingThermostatCompact
+from typing import Any
+
+from homematicip.aio.device import (
+    AsyncHeatingThermostat,
+    AsyncHeatingThermostatCompact,
+    AsyncHeatingThermostatEvo,
+)
 from homematicip.aio.group import AsyncHeatingGroup
 from homematicip.base.enums import AbsenceType
 from homematicip.device import Switch
 from homematicip.functionalHomes import IndoorClimateHome
 
-from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import (
-    CURRENT_HVAC_HEAT,
-    CURRENT_HVAC_IDLE,
-    HVAC_MODE_AUTO,
-    HVAC_MODE_COOL,
-    HVAC_MODE_HEAT,
-    HVAC_MODE_OFF,
+from homeassistant.components.climate import (
     PRESET_AWAY,
     PRESET_BOOST,
     PRESET_ECO,
     PRESET_NONE,
-    SUPPORT_PRESET_MODE,
-    SUPPORT_TARGET_TEMPERATURE,
+    ClimateEntity,
+    ClimateEntityFeature,
+    HVACAction,
+    HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, TEMP_CELSIUS
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import DOMAIN as HMIPC_DOMAIN, HomematicipGenericEntity
 from .hap import HomematicipHAP
@@ -41,7 +44,9 @@ HMIP_ECO_CM = "ECO"
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType, config_entry: ConfigEntry, async_add_entities
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the HomematicIP climate from a config entry."""
     hap = hass.data[HMIPC_DOMAIN][config_entry.unique_id]
@@ -50,8 +55,7 @@ async def async_setup_entry(
         if isinstance(device, AsyncHeatingGroup):
             entities.append(HomematicipHeatingGroup(hap, device))
 
-    if entities:
-        async_add_entities(entities)
+    async_add_entities(entities)
 
 
 class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
@@ -62,6 +66,11 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
     Cool mode is only available for floor heating systems, if basically enabled in the hmip app.
     """
 
+    _attr_supported_features = (
+        ClimateEntityFeature.PRESET_MODE | ClimateEntityFeature.TARGET_TEMPERATURE
+    )
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+
     def __init__(self, hap: HomematicipHAP, device: AsyncHeatingGroup) -> None:
         """Initialize heating group."""
         device.modelType = "HmIP-Heating-Group"
@@ -71,25 +80,15 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
             self._simple_heating = self._first_radiator_thermostat
 
     @property
-    def device_info(self) -> Dict[str, Any]:
+    def device_info(self) -> DeviceInfo:
         """Return device specific attributes."""
-        return {
-            "identifiers": {(HMIPC_DOMAIN, self._device.id)},
-            "name": self._device.label,
-            "manufacturer": "eQ-3",
-            "model": self._device.modelType,
-            "via_device": (HMIPC_DOMAIN, self._device.homeId),
-        }
-
-    @property
-    def temperature_unit(self) -> str:
-        """Return the unit of measurement."""
-        return TEMP_CELSIUS
-
-    @property
-    def supported_features(self) -> int:
-        """Return the list of supported features."""
-        return SUPPORT_PRESET_MODE | SUPPORT_TARGET_TEMPERATURE
+        return DeviceInfo(
+            identifiers={(HMIPC_DOMAIN, self._device.id)},
+            manufacturer="eQ-3",
+            model=self._device.modelType,
+            name=self._device.label,
+            via_device=(HMIPC_DOMAIN, self._device.homeId),
+        )
 
     @property
     def target_temperature(self) -> float:
@@ -109,31 +108,29 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         return self._device.humidity
 
     @property
-    def hvac_mode(self) -> str:
+    def hvac_mode(self) -> HVACMode:
         """Return hvac operation ie."""
         if self._disabled_by_cooling_mode and not self._has_switch:
-            return HVAC_MODE_OFF
+            return HVACMode.OFF
         if self._device.boostMode:
-            return HVAC_MODE_HEAT
+            return HVACMode.HEAT
         if self._device.controlMode == HMIP_MANUAL_CM:
-            return HVAC_MODE_HEAT if self._heat_mode_enabled else HVAC_MODE_COOL
+            return HVACMode.HEAT if self._heat_mode_enabled else HVACMode.COOL
 
-        return HVAC_MODE_AUTO
+        return HVACMode.AUTO
 
     @property
-    def hvac_modes(self) -> List[str]:
+    def hvac_modes(self) -> list[HVACMode]:
         """Return the list of available hvac operation modes."""
         if self._disabled_by_cooling_mode and not self._has_switch:
-            return [HVAC_MODE_OFF]
+            return [HVACMode.OFF]
 
-        return (
-            [HVAC_MODE_AUTO, HVAC_MODE_HEAT]
-            if self._heat_mode_enabled
-            else [HVAC_MODE_AUTO, HVAC_MODE_COOL]
-        )
+        if self._heat_mode_enabled:
+            return [HVACMode.AUTO, HVACMode.HEAT]
+        return [HVACMode.AUTO, HVACMode.COOL]
 
     @property
-    def hvac_action(self) -> Optional[str]:
+    def hvac_action(self) -> HVACAction | None:
         """
         Return the current hvac_action.
 
@@ -144,18 +141,16 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
             and self._has_radiator_thermostat
             and self._heat_mode_enabled
         ):
-            return (
-                CURRENT_HVAC_HEAT if self._device.valvePosition else CURRENT_HVAC_IDLE
-            )
+            return HVACAction.HEATING if self._device.valvePosition else HVACAction.IDLE
 
         return None
 
     @property
-    def preset_mode(self) -> Optional[str]:
+    def preset_mode(self) -> str | None:
         """Return the current preset mode."""
         if self._device.boostMode:
             return PRESET_BOOST
-        if self.hvac_mode in (HVAC_MODE_COOL, HVAC_MODE_HEAT, HVAC_MODE_OFF):
+        if self.hvac_mode in (HVACMode.COOL, HVACMode.HEAT, HVACMode.OFF):
             return PRESET_NONE
         if self._device.controlMode == HMIP_ECO_CM:
             if self._indoor_climate.absenceType == AbsenceType.VACATION:
@@ -174,7 +169,7 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         )
 
     @property
-    def preset_modes(self) -> List[str]:
+    def preset_modes(self) -> list[str]:
         """Return a list of available preset modes incl. hmip profiles."""
         # Boost is only available if a radiator thermostat is in the room,
         # and heat mode is enabled.
@@ -202,21 +197,20 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         """Return the maximum temperature."""
         return self._device.maxTemperature
 
-    async def async_set_temperature(self, **kwargs) -> None:
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-        if temperature is None:
+        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is None:
             return
 
         if self.min_temp <= temperature <= self.max_temp:
             await self._device.set_point_temperature(temperature)
 
-    async def async_set_hvac_mode(self, hvac_mode: str) -> None:
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         if hvac_mode not in self.hvac_modes:
             return
 
-        if hvac_mode == HVAC_MODE_AUTO:
+        if hvac_mode == HVACMode.AUTO:
             await self._device.set_control_mode(HMIP_AUTOMATIC_CM)
         else:
             await self._device.set_control_mode(HMIP_MANUAL_CM)
@@ -233,13 +227,13 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         if preset_mode in self._device_profile_names:
             profile_idx = self._get_profile_idx_by_name(preset_mode)
             if self._device.controlMode != HMIP_AUTOMATIC_CM:
-                await self.async_set_hvac_mode(HVAC_MODE_AUTO)
+                await self.async_set_hvac_mode(HVACMode.AUTO)
             await self._device.set_active_profile(profile_idx)
 
     @property
-    def device_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes of the access point."""
-        state_attr = super().device_state_attributes
+        state_attr = super().extra_state_attributes
 
         if self._device.controlMode == HMIP_ECO_CM:
             if self._indoor_climate.absenceType in [
@@ -259,7 +253,7 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         return self._home.get_functionalHome(IndoorClimateHome)
 
     @property
-    def _device_profiles(self) -> List[str]:
+    def _device_profiles(self) -> list[Any]:
         """Return the relevant profiles."""
         return [
             profile
@@ -270,7 +264,7 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         ]
 
     @property
-    def _device_profile_names(self) -> List[str]:
+    def _device_profile_names(self) -> list[str]:
         """Return a collection of profile names."""
         return [profile.name for profile in self._device_profiles]
 
@@ -298,10 +292,10 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
         )
 
     @property
-    def _relevant_profile_group(self) -> List[str]:
+    def _relevant_profile_group(self) -> dict[str, int]:
         """Return the relevant profile groups."""
         if self._disabled_by_cooling_mode:
-            return []
+            return {}
 
         return HEATING_PROFILES if self._heat_mode_enabled else COOLING_PROFILES
 
@@ -322,11 +316,16 @@ class HomematicipHeatingGroup(HomematicipGenericEntity, ClimateEntity):
     @property
     def _first_radiator_thermostat(
         self,
-    ) -> Optional[Union[AsyncHeatingThermostat, AsyncHeatingThermostatCompact]]:
+    ) -> AsyncHeatingThermostat | AsyncHeatingThermostatCompact | AsyncHeatingThermostatEvo | None:
         """Return the first radiator thermostat from the hmip heating group."""
         for device in self._device.devices:
             if isinstance(
-                device, (AsyncHeatingThermostat, AsyncHeatingThermostatCompact)
+                device,
+                (
+                    AsyncHeatingThermostat,
+                    AsyncHeatingThermostatCompact,
+                    AsyncHeatingThermostatEvo,
+                ),
             ):
                 return device
 

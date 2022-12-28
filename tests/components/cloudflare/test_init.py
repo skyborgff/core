@@ -1,12 +1,16 @@
 """Test the Cloudflare integration."""
-from pycfdns.exceptions import CloudflareConnectionException
+from unittest.mock import patch
+
+from pycfdns.exceptions import (
+    CloudflareAuthenticationException,
+    CloudflareConnectionException,
+)
+import pytest
 
 from homeassistant.components.cloudflare.const import DOMAIN, SERVICE_UPDATE_RECORDS
-from homeassistant.config_entries import (
-    ENTRY_STATE_LOADED,
-    ENTRY_STATE_NOT_LOADED,
-    ENTRY_STATE_SETUP_RETRY,
-)
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util.location import LocationInfo
 
 from . import ENTRY_CONFIG, init_integration
 
@@ -18,12 +22,12 @@ async def test_unload_entry(hass, cfupdate):
     entry = await init_integration(hass)
 
     assert len(hass.config_entries.async_entries(DOMAIN)) == 1
-    assert entry.state == ENTRY_STATE_LOADED
+    assert entry.state is ConfigEntryState.LOADED
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.state == ENTRY_STATE_NOT_LOADED
+    assert entry.state is ConfigEntryState.NOT_LOADED
     assert not hass.data.get(DOMAIN)
 
 
@@ -37,7 +41,31 @@ async def test_async_setup_raises_entry_not_ready(hass, cfupdate):
     instance.get_zone_id.side_effect = CloudflareConnectionException()
     await hass.config_entries.async_setup(entry.entry_id)
 
-    assert entry.state == ENTRY_STATE_SETUP_RETRY
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_async_setup_raises_entry_auth_failed(hass, cfupdate):
+    """Test that it throws ConfigEntryAuthFailed when exception occurs during setup."""
+    instance = cfupdate.return_value
+
+    entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_CONFIG)
+    entry.add_to_hass(hass)
+
+    instance.get_zone_id.side_effect = CloudflareAuthenticationException()
+    await hass.config_entries.async_setup(entry.entry_id)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+
+    flow = flows[0]
+    assert flow["step_id"] == "reauth_confirm"
+    assert flow["handler"] == DOMAIN
+
+    assert "context" in flow
+    assert flow["context"]["source"] == SOURCE_REAUTH
+    assert flow["context"]["entry_id"] == entry.entry_id
 
 
 async def test_integration_services(hass, cfupdate):
@@ -45,14 +73,53 @@ async def test_integration_services(hass, cfupdate):
     instance = cfupdate.return_value
 
     entry = await init_integration(hass)
-    assert entry.state == ENTRY_STATE_LOADED
+    assert entry.state is ConfigEntryState.LOADED
 
-    await hass.services.async_call(
-        DOMAIN,
-        SERVICE_UPDATE_RECORDS,
-        {},
-        blocking=True,
-    )
-    await hass.async_block_till_done()
+    with patch(
+        "homeassistant.components.cloudflare.async_detect_location_info",
+        return_value=LocationInfo(
+            "0.0.0.0",
+            "US",
+            "USD",
+            "CA",
+            "California",
+            "San Diego",
+            "92122",
+            "America/Los_Angeles",
+            32.8594,
+            -117.2073,
+            True,
+        ),
+    ):
+
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_UPDATE_RECORDS,
+            {},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
 
     instance.update_records.assert_called_once()
+
+
+async def test_integration_services_with_issue(hass, cfupdate):
+    """Test integration services with issue."""
+    instance = cfupdate.return_value
+
+    entry = await init_integration(hass)
+    assert entry.state is ConfigEntryState.LOADED
+
+    with patch(
+        "homeassistant.components.cloudflare.async_detect_location_info",
+        return_value=None,
+    ), pytest.raises(HomeAssistantError, match="Could not get external IPv4 address"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_UPDATE_RECORDS,
+            {},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    instance.update_records.assert_not_called()

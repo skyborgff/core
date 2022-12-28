@@ -1,6 +1,5 @@
 """Provide info to system health."""
 from hass_nabucasa import Cloud
-from yarl import URL
 
 from homeassistant.components import system_health
 from homeassistant.core import HomeAssistant, callback
@@ -33,16 +32,17 @@ async def system_health_info(hass):
         data["remote_connected"] = cloud.remote.is_connected
         data["alexa_enabled"] = client.prefs.alexa_enabled
         data["google_enabled"] = client.prefs.google_enabled
+        data["remote_server"] = cloud.remote.snitun_server
 
     data["can_reach_cert_server"] = system_health.async_check_can_reach_url(
-        hass, cloud.acme_directory_server
+        hass, f"https://{cloud.acme_server}/directory"
     )
     data["can_reach_cloud_auth"] = system_health.async_check_can_reach_url(
         hass,
         f"https://cognito-idp.{cloud.region}.amazonaws.com/{cloud.user_pool_id}/.well-known/jwks.json",
     )
     data["can_reach_cloud"] = system_health.async_check_can_reach_url(
-        hass, URL(cloud.relayer).with_scheme("https").with_path("/status")
+        hass, f"https://{cloud.relayer_server}/status"
     )
 
     return data

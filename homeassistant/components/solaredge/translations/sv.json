@@ -1,10 +1,13 @@
 {
     "config": {
         "abort": {
-            "site_exists": "Denna site_id \u00e4r redan konfigurerad"
+            "already_configured": "Enheten \u00e4r redan konfigurerad"
         },
         "error": {
-            "site_exists": "Denna site_id \u00e4r redan konfigurerad"
+            "already_configured": "Enheten \u00e4r redan konfigurerad",
+            "could_not_connect": "Det gick inte att ansluta till solaredge API",
+            "invalid_api_key": "Ogiltig API-nyckel",
+            "site_not_active": "Webbplatsen \u00e4r inte aktiv"
         },
         "step": {
             "user": {

@@ -9,7 +9,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY
-from homeassistant.core import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util.json import load_json
 
 from .const import _LOGGER, CONF_REFRESH_TOKEN, DATA_ECOBEE_CONFIG, DOMAIN
@@ -19,7 +19,6 @@ class EcobeeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle an ecobee config flow."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     def __init__(self):
         """Initialize the ecobee flow."""
@@ -95,7 +94,8 @@ class EcobeeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             }
         except (HomeAssistantError, KeyError):
             _LOGGER.debug(
-                "No valid ecobee.conf configuration found for import, delegating to user step"
+                "No valid ecobee.conf configuration found for import, delegating to"
+                " user step"
             )
             return await self.async_step_user(
                 user_input={
@@ -107,7 +107,8 @@ class EcobeeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if await self.hass.async_add_executor_job(ecobee.refresh_tokens):
             # Credentials found and validated; create the entry.
             _LOGGER.debug(
-                "Valid ecobee configuration found for import, creating configuration entry"
+                "Valid ecobee configuration found for import, creating configuration"
+                " entry"
             )
             return self.async_create_entry(
                 title=DOMAIN,

@@ -1,4 +1,6 @@
 """Config flow for Control4 integration."""
+from __future__ import annotations
+
 from asyncio import TimeoutError as asyncioTimeoutError
 import logging
 
@@ -19,8 +21,12 @@ from homeassistant.core import callback
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 from homeassistant.helpers.device_registry import format_mac
 
-from .const import CONF_CONTROLLER_UNIQUE_ID, DEFAULT_SCAN_INTERVAL, MIN_SCAN_INTERVAL
-from .const import DOMAIN  # pylint:disable=unused-import
+from .const import (
+    CONF_CONTROLLER_UNIQUE_ID,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    MIN_SCAN_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,7 +91,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Control4."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
@@ -93,9 +98,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
 
             hub = Control4Validator(
-                user_input["host"],
-                user_input["username"],
-                user_input["password"],
+                user_input[CONF_HOST],
+                user_input[CONF_USERNAME],
+                user_input[CONF_PASSWORD],
                 self.hass,
             )
             try:
@@ -120,9 +125,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=controller_unique_id,
                     data={
-                        CONF_HOST: user_input["host"],
-                        CONF_USERNAME: user_input["username"],
-                        CONF_PASSWORD: user_input["password"],
+                        CONF_HOST: user_input[CONF_HOST],
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
                         CONF_CONTROLLER_UNIQUE_ID: controller_unique_id,
                     },
                 )
@@ -133,7 +138,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> OptionsFlowHandler:
         """Get the options flow for this handler."""
         return OptionsFlowHandler(config_entry)
 
@@ -141,7 +148,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle a option flow for Control4."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
 

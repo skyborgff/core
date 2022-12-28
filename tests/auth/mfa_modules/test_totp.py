@@ -1,11 +1,11 @@
 """Test the Time-based One Time Password (MFA) auth module."""
 import asyncio
+from unittest.mock import patch
 
 from homeassistant import data_entry_flow
 from homeassistant.auth import auth_manager_from_config, models as auth_models
 from homeassistant.auth.mfa_modules import auth_mfa_module_from_config
 
-from tests.async_mock import patch
 from tests.common import MockUser
 
 MOCK_CODE = "123456"
@@ -93,24 +93,24 @@ async def test_login_flow_validates_mfa(hass):
     provider = hass.auth.auth_providers[0]
 
     result = await hass.auth.login_flow.async_init((provider.type, provider.id))
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
 
     result = await hass.auth.login_flow.async_configure(
         result["flow_id"], {"username": "incorrect-user", "password": "test-pass"}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["errors"]["base"] == "invalid_auth"
 
     result = await hass.auth.login_flow.async_configure(
         result["flow_id"], {"username": "test-user", "password": "incorrect-pass"}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["errors"]["base"] == "invalid_auth"
 
     result = await hass.auth.login_flow.async_configure(
         result["flow_id"], {"username": "test-user", "password": "test-pass"}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["step_id"] == "mfa"
     assert result["data_schema"].schema.get("code") == str
 
@@ -118,7 +118,7 @@ async def test_login_flow_validates_mfa(hass):
         result = await hass.auth.login_flow.async_configure(
             result["flow_id"], {"code": "invalid-code"}
         )
-        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["type"] == data_entry_flow.FlowResultType.FORM
         assert result["step_id"] == "mfa"
         assert result["errors"]["base"] == "invalid_code"
 
@@ -126,8 +126,8 @@ async def test_login_flow_validates_mfa(hass):
         result = await hass.auth.login_flow.async_configure(
             result["flow_id"], {"code": MOCK_CODE}
         )
-        assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
-        assert result["data"].id == "mock-user"
+        assert result["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
+        assert result["data"].id == "mock-id"
 
 
 async def test_race_condition_in_data_loading(hass):

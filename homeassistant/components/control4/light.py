@@ -1,7 +1,10 @@
 """Platform for Control4 Lights."""
+from __future__ import annotations
+
 import asyncio
 from datetime import timedelta
 import logging
+from typing import Any
 
 from pyControl4.error_handling import C4Exception
 from pyControl4.light import C4Light
@@ -9,13 +12,14 @@ from pyControl4.light import C4Light
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_TRANSITION,
-    SUPPORT_BRIGHTNESS,
-    SUPPORT_TRANSITION,
+    ColorMode,
     LightEntity,
+    LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import Control4Entity, get_items_of_category
@@ -30,8 +34,8 @@ CONTROL4_DIMMER_VAR = "LIGHT_LEVEL"
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities
-):
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up Control4 lights from a config entry."""
     entry_data = hass.data[DOMAIN][entry.entry_id]
     scan_interval = entry_data[CONF_SCAN_INTERVAL]
@@ -111,7 +115,10 @@ async def async_setup_entry(
             director = entry_data[CONF_DIRECTOR]
             item_variables = await director.getItemVariables(item_id)
             _LOGGER.warning(
-                "Couldn't get light state data for %s, skipping setup. Available variables from Control4: %s",
+                (
+                    "Couldn't get light state data for %s, skipping setup. Available"
+                    " variables from Control4: %s"
+                ),
                 item_name,
                 item_variables,
             )
@@ -120,7 +127,6 @@ async def async_setup_entry(
         entity_list.append(
             Control4Light(
                 entry_data,
-                entry,
                 item_coordinator,
                 item_name,
                 item_id,
@@ -141,20 +147,18 @@ class Control4Light(Control4Entity, LightEntity):
     def __init__(
         self,
         entry_data: dict,
-        entry: ConfigEntry,
         coordinator: DataUpdateCoordinator,
         name: str,
         idx: int,
-        device_name: str,
-        device_manufacturer: str,
-        device_model: str,
+        device_name: str | None,
+        device_manufacturer: str | None,
+        device_model: str | None,
         device_id: int,
         is_dimmer: bool,
-    ):
+    ) -> None:
         """Initialize Control4 light entity."""
         super().__init__(
             entry_data,
-            entry,
             coordinator,
             name,
             idx,
@@ -164,6 +168,12 @@ class Control4Light(Control4Entity, LightEntity):
             device_id,
         )
         self._is_dimmer = is_dimmer
+        if is_dimmer:
+            self._attr_color_mode = ColorMode.BRIGHTNESS
+            self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+        else:
+            self._attr_color_mode = ColorMode.ONOFF
+            self._attr_supported_color_modes = {ColorMode.ONOFF}
 
     def create_api_object(self):
         """Create a pyControl4 device object.
@@ -185,13 +195,13 @@ class Control4Light(Control4Entity, LightEntity):
         return None
 
     @property
-    def supported_features(self) -> int:
+    def supported_features(self) -> LightEntityFeature:
         """Flag supported features."""
         if self._is_dimmer:
-            return SUPPORT_BRIGHTNESS | SUPPORT_TRANSITION
-        return 0
+            return LightEntityFeature.TRANSITION
+        return LightEntityFeature(0)
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the entity on."""
         c4_light = self.create_api_object()
         if self._is_dimmer:
@@ -214,7 +224,7 @@ class Control4Light(Control4Entity, LightEntity):
         await asyncio.sleep(delay_time)
         await self.coordinator.async_request_refresh()
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the entity off."""
         c4_light = self.create_api_object()
         if self._is_dimmer:

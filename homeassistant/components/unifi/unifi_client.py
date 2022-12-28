@@ -1,22 +1,19 @@
 """Base class for UniFi clients."""
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
+from homeassistant.helpers.entity import DeviceInfo
 
 from .unifi_entity_base import UniFiBase
 
 
-class UniFiClient(UniFiBase):
-    """Base class for UniFi clients."""
+class UniFiClientBase(UniFiBase):
+    """Base class for UniFi clients (without device info)."""
 
     def __init__(self, client, controller) -> None:
         """Set up client."""
         super().__init__(client, controller)
 
         self._is_wired = client.mac not in controller.wireless_clients
-
-    @property
-    def client(self):
-        """Wrap item."""
-        return self._item
+        self.client = self._item
 
     @property
     def is_wired(self):
@@ -29,6 +26,7 @@ class UniFiClient(UniFiBase):
 
         if self.controller.option_ignore_wired_bug:
             return self.client.is_wired
+
         return self._is_wired
 
     @property
@@ -46,11 +44,15 @@ class UniFiClient(UniFiBase):
         """Return if controller is available."""
         return self.controller.available
 
+
+class UniFiClient(UniFiClientBase):
+    """Base class for UniFi clients (with device info)."""
+
     @property
-    def device_info(self) -> dict:
+    def device_info(self) -> DeviceInfo:
         """Return a client description for device registry."""
-        return {
-            "connections": {(CONNECTION_NETWORK_MAC, self.client.mac)},
-            "default_name": self.name,
-            "default_manufacturer": self.client.oui,
-        }
+        return DeviceInfo(
+            connections={(CONNECTION_NETWORK_MAC, self.client.mac)},
+            default_manufacturer=self.client.oui,
+            default_name=self.client.name or self.client.hostname,
+        )

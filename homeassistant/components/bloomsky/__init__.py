@@ -1,24 +1,22 @@
 """Support for BloomSky weather station."""
 from datetime import timedelta
+from http import HTTPStatus
 import logging
 
-from aiohttp.hdrs import AUTHORIZATION
 import requests
 import voluptuous as vol
 
-from homeassistant.const import (
-    CONF_API_KEY,
-    HTTP_METHOD_NOT_ALLOWED,
-    HTTP_OK,
-    HTTP_UNAUTHORIZED,
-)
+from homeassistant.const import CONF_API_KEY, Platform
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import discovery
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import Throttle
+from homeassistant.util.unit_system import METRIC_SYSTEM
 
 _LOGGER = logging.getLogger(__name__)
 
-BLOOMSKY_TYPE = ["camera", "binary_sensor", "sensor"]
+PLATFORMS = [Platform.CAMERA, Platform.BINARY_SENSOR, Platform.SENSOR]
 
 DOMAIN = "bloomsky"
 
@@ -31,19 +29,19 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-def setup(hass, config):
-    """Set up the BloomSky component."""
+def setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the BloomSky integration."""
     api_key = config[DOMAIN][CONF_API_KEY]
 
     try:
-        bloomsky = BloomSky(api_key, hass.config.units.is_metric)
+        bloomsky = BloomSky(api_key, hass.config.units is METRIC_SYSTEM)
     except RuntimeError:
         return False
 
     hass.data[DOMAIN] = bloomsky
 
-    for component in BLOOMSKY_TYPE:
-        discovery.load_platform(hass, component, DOMAIN, {}, config)
+    for platform in PLATFORMS:
+        discovery.load_platform(hass, platform, DOMAIN, {}, config)
 
     return True
 
@@ -60,7 +58,7 @@ class BloomSky:
         self._endpoint_argument = "unit=intl" if is_metric else ""
         self.devices = {}
         self.is_metric = is_metric
-        _LOGGER.debug("Initial BloomSky device load...")
+        _LOGGER.debug("Initial BloomSky device load")
         self.refresh_devices()
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
@@ -69,15 +67,15 @@ class BloomSky:
         _LOGGER.debug("Fetching BloomSky update")
         response = requests.get(
             f"{self.API_URL}?{self._endpoint_argument}",
-            headers={AUTHORIZATION: self._api_key},
+            headers={"Authorization": self._api_key},
             timeout=10,
         )
-        if response.status_code == HTTP_UNAUTHORIZED:
+        if response.status_code == HTTPStatus.UNAUTHORIZED:
             raise RuntimeError("Invalid API_KEY")
-        if response.status_code == HTTP_METHOD_NOT_ALLOWED:
+        if response.status_code == HTTPStatus.METHOD_NOT_ALLOWED:
             _LOGGER.error("You have no bloomsky devices configured")
             return
-        if response.status_code != HTTP_OK:
+        if response.status_code != HTTPStatus.OK:
             _LOGGER.error("Invalid HTTP response: %s", response.status_code)
             return
         # Create dictionary keyed off of the device unique id

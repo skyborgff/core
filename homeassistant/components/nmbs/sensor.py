@@ -1,20 +1,23 @@
 """Get ride details and liveboard details for NMBS (Belgian railway)."""
+from __future__ import annotations
+
 import logging
 
 from pyrail import iRail
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import (
-    ATTR_ATTRIBUTION,
     ATTR_LATITUDE,
     ATTR_LONGITUDE,
     CONF_NAME,
     CONF_SHOW_ON_MAP,
-    TIME_MINUTES,
+    UnitOfTime,
 )
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 import homeassistant.util.dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,7 +67,12 @@ def get_ride_duration(departure_time, arrival_time, delay=0):
     return duration_time + get_delay_in_minutes(delay)
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
+def setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the NMBS sensor with iRail API."""
 
     api_client = iRail()
@@ -76,7 +84,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     station_live = config.get(CONF_STATION_LIVE)
     excl_vias = config[CONF_EXCLUDE_VIAS]
 
-    sensors = [
+    sensors: list[SensorEntity] = [
         NMBSSensor(api_client, name, show_on_map, station_from, station_to, excl_vias)
     ]
 
@@ -88,8 +96,10 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     add_entities(sensors, True)
 
 
-class NMBSLiveBoard(Entity):
+class NMBSLiveBoard(SensorEntity):
     """Get the next train from a station's liveboard."""
+
+    _attr_attribution = "https://api.irail.be/"
 
     def __init__(self, api_client, live_station, station_from, station_to):
         """Initialize the sensor for getting liveboard data."""
@@ -121,12 +131,12 @@ class NMBSLiveBoard(Entity):
         return DEFAULT_ICON
 
     @property
-    def state(self):
+    def native_value(self):
         """Return sensor state."""
         return self._state
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the sensor attributes if data is available."""
         if self._state is None or not self._attrs:
             return None
@@ -140,7 +150,6 @@ class NMBSLiveBoard(Entity):
             "extra_train": int(self._attrs["isExtra"]) > 0,
             "vehicle_id": self._attrs["vehicle"],
             "monitored_station": self._station,
-            ATTR_ATTRIBUTION: "https://api.irail.be/",
         }
 
         if delay > 0:
@@ -149,11 +158,11 @@ class NMBSLiveBoard(Entity):
 
         return attrs
 
-    def update(self):
+    def update(self) -> None:
         """Set the state equal to the next departure."""
         liveboard = self._api_client.get_liveboard(self._station)
 
-        if liveboard is None or not liveboard["departures"]:
+        if liveboard is None or not liveboard.get("departures"):
             return
 
         next_departure = liveboard["departures"]["departure"][0]
@@ -164,8 +173,11 @@ class NMBSLiveBoard(Entity):
         )
 
 
-class NMBSSensor(Entity):
-    """Get the the total travel time for a given connection."""
+class NMBSSensor(SensorEntity):
+    """Get the total travel time for a given connection."""
+
+    _attr_attribution = "https://api.irail.be/"
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
 
     def __init__(
         self, api_client, name, show_on_map, station_from, station_to, excl_vias
@@ -187,11 +199,6 @@ class NMBSSensor(Entity):
         return self._name
 
     @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return TIME_MINUTES
-
-    @property
     def icon(self):
         """Return the sensor default icon or an alert icon if any delay."""
         if self._attrs:
@@ -202,24 +209,31 @@ class NMBSSensor(Entity):
         return "mdi:train"
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return sensor attributes if data is available."""
         if self._state is None or not self._attrs:
             return None
 
         delay = get_delay_in_minutes(self._attrs["departure"]["delay"])
         departure = get_time_until(self._attrs["departure"]["time"])
+        canceled = int(self._attrs["departure"]["canceled"])
 
         attrs = {
-            "departure": f"In {departure} minutes",
-            "departure_minutes": departure,
             "destination": self._station_to,
             "direction": self._attrs["departure"]["direction"]["name"],
             "platform_arriving": self._attrs["arrival"]["platform"],
             "platform_departing": self._attrs["departure"]["platform"],
             "vehicle_id": self._attrs["departure"]["vehicle"],
-            ATTR_ATTRIBUTION: "https://api.irail.be/",
         }
+
+        if canceled != 1:
+            attrs["departure"] = f"In {departure} minutes"
+            attrs["departure_minutes"] = departure
+            attrs["canceled"] = False
+        else:
+            attrs["departure"] = None
+            attrs["departure_minutes"] = None
+            attrs["canceled"] = True
 
         if self._show_on_map and self.station_coordinates:
             attrs[ATTR_LATITUDE] = self.station_coordinates[0]
@@ -242,7 +256,7 @@ class NMBSSensor(Entity):
         return attrs
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the device."""
         return self._state
 
@@ -264,13 +278,13 @@ class NMBSSensor(Entity):
 
         return "vias" in self._attrs and int(self._attrs["vias"]["number"]) > 0
 
-    def update(self):
+    def update(self) -> None:
         """Set the state to the duration of a connection."""
         connections = self._api_client.get_connections(
             self._station_from, self._station_to
         )
 
-        if connections is None or not connections["connection"]:
+        if connections is None or not connections.get("connection"):
             return
 
         if int(connections["connection"][0]["departure"]["left"]) > 0:
@@ -282,8 +296,7 @@ class NMBSSensor(Entity):
 
         if self._excl_vias and self.is_via_connection:
             _LOGGER.debug(
-                "Skipping update of NMBSSensor \
-                because this connection is a via"
+                "Skipping update of NMBSSensor because this connection is a via"
             )
             return
 

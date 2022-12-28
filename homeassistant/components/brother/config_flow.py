@@ -1,14 +1,19 @@
 """Adds config flow for Brother Printer."""
-import ipaddress
-import re
+from __future__ import annotations
+
+from typing import Any
 
 from brother import Brother, SnmpError, UnsupportedModel
 import voluptuous as vol
 
 from homeassistant import config_entries, exceptions
+from homeassistant.components import zeroconf
 from homeassistant.const import CONF_HOST, CONF_TYPE
+from homeassistant.data_entry_flow import FlowResult
+from homeassistant.util.network import is_host_valid
 
-from .const import DOMAIN, PRINTER_TYPES  # pylint:disable=unused-import
+from .const import DOMAIN, PRINTER_TYPES
+from .utils import get_snmp_engine
 
 DATA_SCHEMA = vol.Schema(
     {
@@ -18,39 +23,33 @@ DATA_SCHEMA = vol.Schema(
 )
 
 
-def host_valid(host):
-    """Return True if hostname or IP address is valid."""
-    try:
-        if ipaddress.ip_address(host).version == (4 or 6):
-            return True
-    except ValueError:
-        disallowed = re.compile(r"[^a-zA-Z\d\-]")
-        return all(x and not disallowed.search(x) for x in host.split("."))
-
-
 class BrotherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Brother Printer."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize."""
-        self.brother = None
-        self.host = None
+        self.brother: Brother
+        self.host: str | None = None
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle the initial step."""
         errors = {}
 
         if user_input is not None:
             try:
-                if not host_valid(user_input[CONF_HOST]):
+                if not is_host_valid(user_input[CONF_HOST]):
                     raise InvalidHost()
 
-                brother = Brother(user_input[CONF_HOST])
+                snmp_engine = get_snmp_engine(self.hass)
+
+                brother = await Brother.create(
+                    user_input[CONF_HOST], snmp_engine=snmp_engine
+                )
                 await brother.async_update()
-                brother.shutdown()
 
                 await self.async_set_unique_id(brother.serial.lower())
                 self._abort_if_unique_id_configured()
@@ -70,30 +69,32 @@ class BrotherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
         )
 
-    async def async_step_zeroconf(self, discovery_info):
+    async def async_step_zeroconf(
+        self, discovery_info: zeroconf.ZeroconfServiceInfo
+    ) -> FlowResult:
         """Handle zeroconf discovery."""
-        if discovery_info is None:
-            return self.async_abort(reason="cannot_connect")
+        self.host = discovery_info.host
 
-        if not discovery_info.get("name") or not discovery_info["name"].startswith(
-            "Brother"
-        ):
-            return self.async_abort(reason="not_brother_printer")
+        # Do not probe the device if the host is already configured
+        self._async_abort_entries_match({CONF_HOST: self.host})
 
-        # Hostname is format: brother.local.
-        self.host = discovery_info["hostname"].rstrip(".")
+        snmp_engine = get_snmp_engine(self.hass)
+        model = discovery_info.properties.get("product")
 
-        self.brother = Brother(self.host)
         try:
+            self.brother = await Brother.create(
+                self.host, snmp_engine=snmp_engine, model=model
+            )
             await self.brother.async_update()
-        except (ConnectionError, SnmpError, UnsupportedModel):
+        except UnsupportedModel:
+            return self.async_abort(reason="unsupported_model")
+        except (ConnectionError, SnmpError):
             return self.async_abort(reason="cannot_connect")
 
         # Check if already configured
         await self.async_set_unique_id(self.brother.serial.lower())
-        self._abort_if_unique_id_configured()
+        self._abort_if_unique_id_configured({CONF_HOST: self.host})
 
-        # pylint: disable=no-member # https://github.com/PyCQA/pylint/issues/3167
         self.context.update(
             {
                 "title_placeholders": {
@@ -104,11 +105,12 @@ class BrotherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return await self.async_step_zeroconf_confirm()
 
-    async def async_step_zeroconf_confirm(self, user_input=None):
+    async def async_step_zeroconf_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle a flow initiated by zeroconf."""
         if user_input is not None:
             title = f"{self.brother.model} {self.brother.serial}"
-            # pylint: disable=no-member # https://github.com/PyCQA/pylint/issues/3167
             return self.async_create_entry(
                 title=title,
                 data={CONF_HOST: self.host, CONF_TYPE: user_input[CONF_TYPE]},

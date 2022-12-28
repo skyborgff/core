@@ -1,21 +1,20 @@
 """Translation string lookup helpers."""
+from __future__ import annotations
+
 import asyncio
 from collections import ChainMap
+from collections.abc import Iterable, Mapping
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.loader import (
-    MAX_LOAD_CONCURRENTLY,
     Integration,
     async_get_config_flows,
-    async_get_integration,
+    async_get_integrations,
     bind_hass,
 )
-from homeassistant.util.async_ import gather_with_concurrency
 from homeassistant.util.json import load_json
-
-from .typing import HomeAssistantType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ TRANSLATION_FLATTEN_CACHE = "translation_flatten_cache"
 LOCALE_EN = "en"
 
 
-def recursive_flatten(prefix: Any, data: Dict) -> Dict[str, Any]:
+def recursive_flatten(prefix: Any, data: dict[str, Any]) -> dict[str, Any]:
     """Return a flattened representation of dict data."""
     output = {}
     for key, value in data.items():
@@ -38,7 +37,7 @@ def recursive_flatten(prefix: Any, data: Dict) -> Dict[str, Any]:
 @callback
 def component_translation_path(
     component: str, language: str, integration: Integration
-) -> Optional[str]:
+) -> str | None:
     """Return the translation json file location for a component.
 
     For component:
@@ -69,8 +68,8 @@ def component_translation_path(
 
 
 def load_translations_files(
-    translation_files: Dict[str, str]
-) -> Dict[str, Dict[str, Any]]:
+    translation_files: dict[str, str]
+) -> dict[str, dict[str, Any]]:
     """Load and parse translation.json files."""
     loaded = {}
     for component, translation_file in translation_files.items():
@@ -90,18 +89,15 @@ def load_translations_files(
 
 
 def _merge_resources(
-    translation_strings: Dict[str, Dict[str, Any]],
-    components: Set[str],
+    translation_strings: dict[str, dict[str, Any]],
+    components: set[str],
     category: str,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Build and merge the resources response for the given components and platforms."""
     # Build response
-    resources: Dict[str, Dict[str, Any]] = {}
+    resources: dict[str, dict[str, Any]] = {}
     for component in components:
-        if "." not in component:
-            domain = component
-        else:
-            domain = component.split(".", 1)[0]
+        domain = component.partition(".")[0]
 
         domain_resources = resources.setdefault(domain, {})
 
@@ -122,7 +118,10 @@ def _merge_resources(
             domain_resources.update(new_value)
         else:
             _LOGGER.error(
-                "An integration providing translations for %s provided invalid data: %s",
+                (
+                    "An integration providing translations for %s provided invalid"
+                    " data: %s"
+                ),
                 domain,
                 new_value,
             )
@@ -131,10 +130,10 @@ def _merge_resources(
 
 
 def _build_resources(
-    translation_strings: Dict[str, Dict[str, Any]],
-    components: Set[str],
+    translation_strings: dict[str, dict[str, Any]],
+    components: set[str],
     category: str,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any] | str]:
     """Build the resources response for the given components."""
     # Build response
     return {
@@ -146,21 +145,18 @@ def _build_resources(
 
 
 async def async_get_component_strings(
-    hass: HomeAssistantType, language: str, components: Set[str]
-) -> Dict[str, Any]:
+    hass: HomeAssistant, language: str, components: set[str]
+) -> dict[str, Any]:
     """Load translations."""
-    domains = list({loaded.split(".")[-1] for loaded in components})
-    integrations = dict(
-        zip(
-            domains,
-            await gather_with_concurrency(
-                MAX_LOAD_CONCURRENTLY,
-                *[async_get_integration(hass, domain) for domain in domains],
-            ),
-        )
-    )
+    domains = list({loaded.rpartition(".")[-1] for loaded in components})
 
-    translations: Dict[str, Any] = {}
+    integrations: dict[str, Integration] = {}
+    ints_or_excs = await async_get_integrations(hass, domains)
+    for domain, int_or_exc in ints_or_excs.items():
+        if isinstance(int_or_exc, Exception):
+            raise int_or_exc
+        integrations[domain] = int_or_exc
+    translations: dict[str, Any] = {}
 
     # Determine paths of missing components/platforms
     files_to_load = {}
@@ -202,18 +198,18 @@ async def async_get_component_strings(
 class _TranslationCache:
     """Cache for flattened translations."""
 
-    def __init__(self, hass: HomeAssistantType) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the cache."""
         self.hass = hass
-        self.loaded: Dict[str, Set[str]] = {}
-        self.cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self.loaded: dict[str, set[str]] = {}
+        self.cache: dict[str, dict[str, dict[str, Any]]] = {}
 
     async def async_fetch(
         self,
         language: str,
         category: str,
-        components: Set,
-    ) -> List[Dict[str, Dict[str, Any]]]:
+        components: set[str],
+    ) -> list[dict[str, dict[str, Any]]]:
         """Load resources into the cache."""
         components_to_load = components - self.loaded.setdefault(language, set())
 
@@ -224,7 +220,7 @@ class _TranslationCache:
 
         return [cached.get(component, {}).get(category, {}) for component in components]
 
-    async def _async_load(self, language: str, components: Set) -> None:
+    async def _async_load(self, language: str, components: set[str]) -> None:
         """Populate the cache for a given set of components."""
         _LOGGER.debug(
             "Cache miss for %s: %s",
@@ -234,10 +230,10 @@ class _TranslationCache:
         # Fetch the English resources, as a fallback for missing keys
         languages = [LOCALE_EN] if language == LOCALE_EN else [LOCALE_EN, language]
         for translation_strings in await asyncio.gather(
-            *[
+            *(
                 async_get_component_strings(self.hass, lang, components)
                 for lang in languages
-            ]
+            )
         ):
             self._build_category_cache(language, components, translation_strings)
 
@@ -247,12 +243,13 @@ class _TranslationCache:
     def _build_category_cache(
         self,
         language: str,
-        components: Set,
-        translation_strings: Dict[str, Dict[str, Any]],
+        components: set[str],
+        translation_strings: dict[str, dict[str, Any]],
     ) -> None:
         """Extract resources into the cache."""
+        resource: dict[str, Any] | str
         cached = self.cache.setdefault(language, {})
-        categories: Set[str] = set()
+        categories: set[str] = set()
         for resource in translation_strings.values():
             categories.update(resource)
 
@@ -260,10 +257,11 @@ class _TranslationCache:
             resource_func = (
                 _merge_resources if category == "state" else _build_resources
             )
-            new_resources = resource_func(translation_strings, components, category)
+            new_resources: Mapping[str, dict[str, Any] | str]
+            new_resources = resource_func(translation_strings, components, category)  # type: ignore[assignment]
 
             for component, resource in new_resources.items():
-                category_cache: Dict[str, Any] = cached.setdefault(
+                category_cache: dict[str, Any] = cached.setdefault(
                     component, {}
                 ).setdefault(category, {})
 
@@ -280,12 +278,12 @@ class _TranslationCache:
 
 @bind_hass
 async def async_get_translations(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     language: str,
     category: str,
-    integration: Optional[str] = None,
-    config_flow: Optional[bool] = None,
-) -> Dict[str, Any]:
+    integrations: Iterable[str] | None = None,
+    config_flow: bool | None = None,
+) -> dict[str, Any]:
     """Return all backend translations.
 
     If integration specified, load it for that one.
@@ -294,8 +292,8 @@ async def async_get_translations(
     """
     lock = hass.data.setdefault(TRANSLATION_LOAD_LOCK, asyncio.Lock())
 
-    if integration is not None:
-        components = {integration}
+    if integrations is not None:
+        components = set(integrations)
     elif config_flow:
         components = (await async_get_config_flows(hass)) - hass.config.components
     elif category == "state":
@@ -307,7 +305,10 @@ async def async_get_translations(
         }
 
     async with lock:
-        cache = hass.data.setdefault(TRANSLATION_FLATTEN_CACHE, _TranslationCache(hass))
+        if TRANSLATION_FLATTEN_CACHE in hass.data:
+            cache = hass.data[TRANSLATION_FLATTEN_CACHE]
+        else:
+            cache = hass.data[TRANSLATION_FLATTEN_CACHE] = _TranslationCache(hass)
         cached = await cache.async_fetch(language, category, components)
 
     return dict(ChainMap(*cached))

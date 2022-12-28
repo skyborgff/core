@@ -1,27 +1,34 @@
 """Support for functionality to keep track of the sun."""
-from datetime import timedelta
-import logging
+from __future__ import annotations
 
+from datetime import datetime, timedelta
+import logging
+from typing import Any
+
+from astral.location import Elevation, Location
+
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import (
-    CONF_ELEVATION,
     EVENT_CORE_CONFIG_UPDATE,
     SUN_EVENT_SUNRISE,
     SUN_EVENT_SUNSET,
 )
-from homeassistant.core import callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import event
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.integration_platform import (
+    async_process_integration_platform_for_component,
+)
 from homeassistant.helpers.sun import (
     get_astral_location,
     get_location_astral_event_next,
 )
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
-# mypy: allow-untyped-calls, allow-untyped-defs, no-check-untyped-defs
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN = "sun"
 
 ENTITY_ID = "sun.sun"
 
@@ -72,50 +79,91 @@ _PHASE_UPDATES = {
 }
 
 
-async def async_setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Track the state of the sun."""
-    if config.get(CONF_ELEVATION) is not None:
-        _LOGGER.warning(
-            "Elevation is now configured in Home Assistant core. "
-            "See https://www.home-assistant.io/docs/configuration/basic/"
+    hass.async_create_task(
+        hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": SOURCE_IMPORT},
+            data=config,
         )
-    Sun(hass)
+    )
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up from a config entry."""
+    # Process integration platforms right away since
+    # we will create entities before firing EVENT_COMPONENT_LOADED
+    await async_process_integration_platform_for_component(hass, DOMAIN)
+    hass.data[DOMAIN] = Sun(hass)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    sun = hass.data.pop(DOMAIN)
+    sun.remove_listeners()
+    hass.states.async_remove(sun.entity_id)
     return True
 
 
 class Sun(Entity):
     """Representation of the Sun."""
 
+    _attr_name = "Sun"
     entity_id = ENTITY_ID
 
-    def __init__(self, hass):
+    location: Location
+    elevation: Elevation
+    next_rising: datetime
+    next_setting: datetime
+    next_dawn: datetime
+    next_dusk: datetime
+    next_midnight: datetime
+    next_noon: datetime
+    solar_elevation: float
+    solar_azimuth: float
+    rising: bool
+    _next_change: datetime
+
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the sun."""
         self.hass = hass
-        self.location = None
-        self._state = self.next_rising = self.next_setting = None
-        self.next_dawn = self.next_dusk = None
-        self.next_midnight = self.next_noon = None
-        self.solar_elevation = self.solar_azimuth = None
-        self.rising = self.phase = None
-        self._next_change = None
+        self.phase: str | None = None
 
-        def update_location(_event):
-            location = get_astral_location(self.hass)
-            if location == self.location:
-                return
-            self.location = location
-            self.update_events()
+        self._config_listener: CALLBACK_TYPE | None = None
+        self._update_events_listener: CALLBACK_TYPE | None = None
+        self._update_sun_position_listener: CALLBACK_TYPE | None = None
+        self._config_listener = self.hass.bus.async_listen(
+            EVENT_CORE_CONFIG_UPDATE, self.update_location
+        )
+        self.update_location(initial=True)
 
-        update_location(None)
-        self.hass.bus.async_listen(EVENT_CORE_CONFIG_UPDATE, update_location)
+    @callback
+    def update_location(self, _: Event | None = None, initial: bool = False) -> None:
+        """Update location."""
+        location, elevation = get_astral_location(self.hass)
+        if not initial and location == self.location:
+            return
+        self.location = location
+        self.elevation = elevation
+        if self._update_events_listener:
+            self._update_events_listener()
+        self.update_events()
+
+    @callback
+    def remove_listeners(self) -> None:
+        """Remove listeners."""
+        if self._config_listener:
+            self._config_listener()
+        if self._update_events_listener:
+            self._update_events_listener()
+        if self._update_sun_position_listener:
+            self._update_sun_position_listener()
 
     @property
-    def name(self):
-        """Return the name."""
-        return "Sun"
-
-    @property
-    def state(self):
+    def state(self) -> str:
         """Return the state of the sun."""
         # 0.8333 is the same value as astral uses
         if self.solar_elevation > -0.833:
@@ -124,7 +172,7 @@ class Sun(Entity):
         return STATE_BELOW_HORIZON
 
     @property
-    def state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes of the sun."""
         return {
             STATE_ATTR_NEXT_DAWN: self.next_dawn.isoformat(),
@@ -138,9 +186,11 @@ class Sun(Entity):
             STATE_ATTR_RISING: self.rising,
         }
 
-    def _check_event(self, utc_point_in_time, sun_event, before):
+    def _check_event(
+        self, utc_point_in_time: datetime, sun_event: str, before: str | None
+    ) -> datetime:
         next_utc = get_location_astral_event_next(
-            self.location, sun_event, utc_point_in_time
+            self.location, self.elevation, sun_event, utc_point_in_time
         )
         if next_utc < self._next_change:
             self._next_change = next_utc
@@ -148,7 +198,7 @@ class Sun(Entity):
         return next_utc
 
     @callback
-    def update_events(self, now=None):
+    def update_events(self, now: datetime | None = None) -> None:
         """Update the attributes containing solar events."""
         # Grab current time in case system clock changed since last time we ran.
         utc_point_in_time = dt_util.utcnow()
@@ -169,7 +219,7 @@ class Sun(Entity):
         )
         self.location.solar_depression = -10
         self._check_event(utc_point_in_time, "dawn", PHASE_SMALL_DAY)
-        self.next_noon = self._check_event(utc_point_in_time, "solar_noon", None)
+        self.next_noon = self._check_event(utc_point_in_time, "noon", None)
         self._check_event(utc_point_in_time, "dusk", PHASE_DAY)
         self.next_setting = self._check_event(
             utc_point_in_time, SUN_EVENT_SUNSET, PHASE_SMALL_DAY
@@ -180,9 +230,7 @@ class Sun(Entity):
         self._check_event(utc_point_in_time, "dusk", PHASE_NAUTICAL_TWILIGHT)
         self.location.solar_depression = "astronomical"
         self._check_event(utc_point_in_time, "dusk", PHASE_ASTRONOMICAL_TWILIGHT)
-        self.next_midnight = self._check_event(
-            utc_point_in_time, "solar_midnight", None
-        )
+        self.next_midnight = self._check_event(utc_point_in_time, "midnight", None)
         self.location.solar_depression = "civil"
 
         # if the event was solar midday or midnight, phase will now
@@ -190,7 +238,7 @@ class Sun(Entity):
         # even in the day at the poles, so we can't rely on it.
         # Need to calculate phase if next is noon or midnight
         if self.phase is None:
-            elevation = self.location.solar_elevation(self._next_change)
+            elevation = self.location.solar_elevation(self._next_change, self.elevation)
             if elevation >= 10:
                 self.phase = PHASE_DAY
             elif elevation >= 0:
@@ -209,22 +257,26 @@ class Sun(Entity):
         _LOGGER.debug(
             "sun phase_update@%s: phase=%s", utc_point_in_time.isoformat(), self.phase
         )
+        if self._update_sun_position_listener:
+            self._update_sun_position_listener()
         self.update_sun_position()
 
         # Set timer for the next solar event
-        event.async_track_point_in_utc_time(
+        self._update_events_listener = event.async_track_point_in_utc_time(
             self.hass, self.update_events, self._next_change
         )
         _LOGGER.debug("next time: %s", self._next_change.isoformat())
 
     @callback
-    def update_sun_position(self, now=None):
+    def update_sun_position(self, now: datetime | None = None) -> None:
         """Calculate the position of the sun."""
         # Grab current time in case system clock changed since last time we ran.
         utc_point_in_time = dt_util.utcnow()
-        self.solar_azimuth = round(self.location.solar_azimuth(utc_point_in_time), 2)
+        self.solar_azimuth = round(
+            self.location.solar_azimuth(utc_point_in_time, self.elevation), 2
+        )
         self.solar_elevation = round(
-            self.location.solar_elevation(utc_point_in_time), 2
+            self.location.solar_elevation(utc_point_in_time, self.elevation), 2
         )
 
         _LOGGER.debug(
@@ -236,11 +288,13 @@ class Sun(Entity):
         self.async_write_ha_state()
 
         # Next update as per the current phase
+        assert self.phase
         delta = _PHASE_UPDATES[self.phase]
         # if the next update is within 1.25 of the next
         # position update just drop it
         if utc_point_in_time + delta * 1.25 > self._next_change:
+            self._update_sun_position_listener = None
             return
-        event.async_track_point_in_utc_time(
+        self._update_sun_position_listener = event.async_track_point_in_utc_time(
             self.hass, self.update_sun_position, utc_point_in_time + delta
         )

@@ -1,18 +1,17 @@
 """Test ZHA Gateway."""
 import asyncio
-import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import zigpy.profiles.zha as zha
 import zigpy.zcl.clusters.general as general
 import zigpy.zcl.clusters.lighting as lighting
 
-from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.components.zha.core.group import GroupMember
-from homeassistant.components.zha.core.store import TOMBSTONE_LIFETIME
+from homeassistant.const import Platform
 
-from .common import async_enable_traffic, async_find_group_entity_id, get_zha_gateway
+from .common import async_find_group_entity_id, get_zha_gateway
+from .conftest import SIG_EP_INPUT, SIG_EP_OUTPUT, SIG_EP_PROFILE, SIG_EP_TYPE
 
 IEEE_GROUPABLE_DEVICE = "01:2d:6f:00:0a:90:69:e8"
 IEEE_GROUPABLE_DEVICE2 = "02:2d:6f:00:0a:90:69:e8"
@@ -24,12 +23,29 @@ def zigpy_dev_basic(zigpy_device_mock):
     return zigpy_device_mock(
         {
             1: {
-                "in_clusters": [general.Basic.cluster_id],
-                "out_clusters": [],
-                "device_type": zha.DeviceType.ON_OFF_SWITCH,
+                SIG_EP_INPUT: [general.Basic.cluster_id],
+                SIG_EP_OUTPUT: [],
+                SIG_EP_TYPE: zha.DeviceType.ON_OFF_SWITCH,
+                SIG_EP_PROFILE: zha.PROFILE_ID,
             }
         }
     )
+
+
+@pytest.fixture(autouse=True)
+def required_platform_only():
+    """Only setup the required and required base platforms to speed up tests."""
+    with patch(
+        "homeassistant.components.zha.PLATFORMS",
+        (
+            Platform.SENSOR,
+            Platform.LIGHT,
+            Platform.DEVICE_TRACKER,
+            Platform.NUMBER,
+            Platform.SELECT,
+        ),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -47,9 +63,10 @@ async def coordinator(hass, zigpy_device_mock, zha_device_joined):
     zigpy_device = zigpy_device_mock(
         {
             1: {
-                "in_clusters": [],
-                "out_clusters": [],
-                "device_type": zha.DeviceType.COLOR_DIMMABLE_LIGHT,
+                SIG_EP_INPUT: [],
+                SIG_EP_OUTPUT: [],
+                SIG_EP_TYPE: zha.DeviceType.COLOR_DIMMABLE_LIGHT,
+                SIG_EP_PROFILE: zha.PROFILE_ID,
             }
         },
         ieee="00:15:8d:00:02:32:4f:32",
@@ -68,14 +85,15 @@ async def device_light_1(hass, zigpy_device_mock, zha_device_joined):
     zigpy_device = zigpy_device_mock(
         {
             1: {
-                "in_clusters": [
+                SIG_EP_INPUT: [
                     general.OnOff.cluster_id,
                     general.LevelControl.cluster_id,
                     lighting.Color.cluster_id,
                     general.Groups.cluster_id,
                 ],
-                "out_clusters": [],
-                "device_type": zha.DeviceType.COLOR_DIMMABLE_LIGHT,
+                SIG_EP_OUTPUT: [],
+                SIG_EP_TYPE: zha.DeviceType.COLOR_DIMMABLE_LIGHT,
+                SIG_EP_PROFILE: zha.PROFILE_ID,
             }
         },
         ieee=IEEE_GROUPABLE_DEVICE,
@@ -92,14 +110,15 @@ async def device_light_2(hass, zigpy_device_mock, zha_device_joined):
     zigpy_device = zigpy_device_mock(
         {
             1: {
-                "in_clusters": [
+                SIG_EP_INPUT: [
                     general.OnOff.cluster_id,
                     general.LevelControl.cluster_id,
                     lighting.Color.cluster_id,
                     general.Groups.cluster_id,
                 ],
-                "out_clusters": [],
-                "device_type": zha.DeviceType.COLOR_DIMMABLE_LIGHT,
+                SIG_EP_OUTPUT: [],
+                SIG_EP_TYPE: zha.DeviceType.COLOR_DIMMABLE_LIGHT,
+                SIG_EP_PROFILE: zha.PROFILE_ID,
             }
         },
         ieee=IEEE_GROUPABLE_DEVICE2,
@@ -139,7 +158,7 @@ async def test_gateway_group_methods(hass, device_light_1, device_light_2, coord
     for member in zha_group.members:
         assert member.device.ieee in member_ieee_addresses
 
-    entity_id = async_find_group_entity_id(hass, LIGHT_DOMAIN, zha_group)
+    entity_id = async_find_group_entity_id(hass, Platform.LIGHT, zha_group)
     assert hass.states.get(entity_id) is not None
 
     # test get group by name
@@ -153,7 +172,7 @@ async def test_gateway_group_methods(hass, device_light_1, device_light_2, coord
     assert zha_gateway.async_get_group_by_name(zha_group.name) is None
 
     # the group entity should be cleaned up
-    assert entity_id not in hass.states.async_entity_ids(LIGHT_DOMAIN)
+    assert entity_id not in hass.states.async_entity_ids(Platform.LIGHT)
 
     # test creating a group with 1 member
     zha_group = await zha_gateway.async_create_zigpy_group(
@@ -167,7 +186,7 @@ async def test_gateway_group_methods(hass, device_light_1, device_light_2, coord
         assert member.device.ieee in [device_light_1.ieee]
 
     # the group entity should not have been cleaned up
-    assert entity_id not in hass.states.async_entity_ids(LIGHT_DOMAIN)
+    assert entity_id not in hass.states.async_entity_ids(Platform.LIGHT)
 
     with patch("zigpy.zcl.Cluster.request", side_effect=asyncio.TimeoutError):
         await zha_group.members[0].async_remove_from_group()
@@ -176,60 +195,67 @@ async def test_gateway_group_methods(hass, device_light_1, device_light_2, coord
             assert member.device.ieee in [device_light_1.ieee]
 
 
-async def test_updating_device_store(hass, zigpy_dev_basic, zha_dev_basic):
-    """Test saving data after a delay."""
+async def test_gateway_create_group_with_id(hass, device_light_1, coordinator):
+    """Test creating a group with a specific ID."""
     zha_gateway = get_zha_gateway(hass)
     assert zha_gateway is not None
-    await async_enable_traffic(hass, [zha_dev_basic])
+    zha_gateway.coordinator_zha_device = coordinator
+    coordinator._zha_gateway = zha_gateway
+    device_light_1._zha_gateway = zha_gateway
 
-    assert zha_dev_basic.last_seen is not None
-    entry = zha_gateway.zha_storage.async_get_or_create_device(zha_dev_basic)
-    assert entry.last_seen == zha_dev_basic.last_seen
-
-    assert zha_dev_basic.last_seen is not None
-    last_seen = zha_dev_basic.last_seen
-
-    # test that we can't set None as last seen any more
-    zha_dev_basic.async_update_last_seen(None)
-    assert last_seen == zha_dev_basic.last_seen
-
-    # test that we won't put None in storage
-    zigpy_dev_basic.last_seen = None
-    assert zha_dev_basic.last_seen is None
-    await zha_gateway.async_update_device_storage()
+    zha_group = await zha_gateway.async_create_zigpy_group(
+        "Test Group", [GroupMember(device_light_1.ieee, 1)], group_id=0x1234
+    )
     await hass.async_block_till_done()
-    entry = zha_gateway.zha_storage.async_get_or_create_device(zha_dev_basic)
-    assert entry.last_seen == last_seen
 
-    # test that we can still set a good last_seen
-    last_seen = time.time()
-    zha_dev_basic.async_update_last_seen(last_seen)
-    assert last_seen == zha_dev_basic.last_seen
-
-    # test that we still put good values in storage
-    await zha_gateway.async_update_device_storage()
-    await hass.async_block_till_done()
-    entry = zha_gateway.zha_storage.async_get_or_create_device(zha_dev_basic)
-    assert entry.last_seen == last_seen
+    assert len(zha_group.members) == 1
+    assert zha_group.members[0].device is device_light_1
+    assert zha_group.group_id == 0x1234
 
 
-async def test_cleaning_up_storage(hass, zigpy_dev_basic, zha_dev_basic, hass_storage):
-    """Test cleaning up zha storage and remove stale devices."""
+@patch(
+    "homeassistant.components.zha.core.gateway.ZHAGateway.async_load_devices",
+    MagicMock(),
+)
+@patch(
+    "homeassistant.components.zha.core.gateway.ZHAGateway.async_load_groups",
+    MagicMock(),
+)
+@patch("homeassistant.components.zha.core.gateway.STARTUP_FAILURE_DELAY_S", 0.01)
+@pytest.mark.parametrize(
+    "startup",
+    [
+        [asyncio.TimeoutError(), FileNotFoundError(), MagicMock()],
+        [asyncio.TimeoutError(), MagicMock()],
+        [MagicMock()],
+    ],
+)
+async def test_gateway_initialize_success(startup, hass, device_light_1, coordinator):
+    """Test ZHA initializing the gateway successfully."""
     zha_gateway = get_zha_gateway(hass)
     assert zha_gateway is not None
-    await async_enable_traffic(hass, [zha_dev_basic])
 
-    assert zha_dev_basic.last_seen is not None
-    await zha_gateway.zha_storage.async_save()
-    await hass.async_block_till_done()
+    zha_gateway.shutdown = AsyncMock()
 
-    assert hass_storage["zha.storage"]["data"]["devices"]
-    device = hass_storage["zha.storage"]["data"]["devices"][0]
-    assert device["ieee"] == str(zha_dev_basic.ieee)
+    with patch(
+        "bellows.zigbee.application.ControllerApplication.new", side_effect=startup
+    ) as mock_new:
+        await zha_gateway.async_initialize()
 
-    zha_dev_basic.device.last_seen = time.time() - TOMBSTONE_LIFETIME - 1
-    await zha_gateway.async_update_device_storage()
-    await hass.async_block_till_done()
-    await zha_gateway.zha_storage.async_save()
-    await hass.async_block_till_done()
-    assert not hass_storage["zha.storage"]["data"]["devices"]
+    assert mock_new.call_count == len(startup)
+
+
+@patch("homeassistant.components.zha.core.gateway.STARTUP_FAILURE_DELAY_S", 0.01)
+async def test_gateway_initialize_failure(hass, device_light_1, coordinator):
+    """Test ZHA failing to initialize the gateway."""
+    zha_gateway = get_zha_gateway(hass)
+    assert zha_gateway is not None
+
+    with patch(
+        "bellows.zigbee.application.ControllerApplication.new",
+        side_effect=[asyncio.TimeoutError(), FileNotFoundError(), RuntimeError()],
+    ) as mock_new:
+        with pytest.raises(RuntimeError):
+            await zha_gateway.async_initialize()
+
+    assert mock_new.call_count == 3

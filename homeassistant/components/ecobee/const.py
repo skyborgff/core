@@ -14,13 +14,15 @@ from homeassistant.components.weather import (
     ATTR_CONDITION_SUNNY,
     ATTR_CONDITION_WINDY,
 )
+from homeassistant.const import Platform
 
 _LOGGER = logging.getLogger(__package__)
 
 DOMAIN = "ecobee"
 DATA_ECOBEE_CONFIG = "ecobee_config"
+DATA_HASS_CONFIG = "ecobee_hass_config"
+ATTR_CONFIG_ENTRY_ID = "entry_id"
 
-CONF_INDEX = "index"
 CONF_REFRESH_TOKEN = "refresh_token"
 
 ECOBEE_MODEL_TO_NAME = {
@@ -35,9 +37,17 @@ ECOBEE_MODEL_TO_NAME = {
     "nikeEms": "ecobee3 lite EMS",
     "apolloSmart": "ecobee4 Smart",
     "vulcanSmart": "ecobee4 Smart",
+    "aresSmart": "ecobee Smart Premium",
+    "artemisSmart": "ecobee Smart Enhanced",
 }
 
-ECOBEE_PLATFORMS = ["binary_sensor", "climate", "sensor", "weather"]
+PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.CLIMATE,
+    Platform.HUMIDIFIER,
+    Platform.SENSOR,
+    Platform.WEATHER,
+]
 
 MANUFACTURER = "ecobee"
 

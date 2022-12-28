@@ -1,14 +1,19 @@
 """Support for balance data via the Starling Bank API."""
+from __future__ import annotations
+
+from datetime import timedelta
 import logging
 
 import requests
 from starlingbank import StarlingAccount
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_NAME
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,6 +27,7 @@ DEFAULT_SANDBOX = False
 DEFAULT_ACCOUNT_NAME = "Starling"
 
 ICON = "mdi:currency-gbp"
+SCAN_INTERVAL = timedelta(seconds=180)
 
 ACCOUNT_SCHEMA = vol.Schema(
     {
@@ -39,7 +45,12 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-def setup_platform(hass, config, add_devices, discovery_info=None):
+def setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_devices: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the Sterling Bank sensor platform."""
 
     sensors = []
@@ -62,7 +73,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     add_devices(sensors, True)
 
 
-class StarlingBalanceSensor(Entity):
+class StarlingBalanceSensor(SensorEntity):
     """Representation of a Starling balance sensor."""
 
     def __init__(self, starling_account, account_name, balance_data_type):
@@ -80,12 +91,12 @@ class StarlingBalanceSensor(Entity):
         )
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
         return self._state
 
     @property
-    def unit_of_measurement(self):
+    def native_unit_of_measurement(self):
         """Return the unit of measurement."""
         return self._starling_account.currency
 
@@ -94,7 +105,7 @@ class StarlingBalanceSensor(Entity):
         """Return the entity icon."""
         return ICON
 
-    def update(self):
+    def update(self) -> None:
         """Fetch new state data for the sensor."""
         self._starling_account.update_balance_data()
         if self._balance_data_type == "cleared_balance":

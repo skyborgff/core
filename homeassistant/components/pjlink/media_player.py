@@ -1,24 +1,21 @@
 """Support for controlling projector via the PJLink protocol."""
+from __future__ import annotations
+
 from pypjlink import MUTE_AUDIO, Projector
 from pypjlink.projector import ProjectorError
 import voluptuous as vol
 
-from homeassistant.components.media_player import PLATFORM_SCHEMA, MediaPlayerEntity
-from homeassistant.components.media_player.const import (
-    SUPPORT_SELECT_SOURCE,
-    SUPPORT_TURN_OFF,
-    SUPPORT_TURN_ON,
-    SUPPORT_VOLUME_MUTE,
+from homeassistant.components.media_player import (
+    PLATFORM_SCHEMA,
+    MediaPlayerEntity,
+    MediaPlayerEntityFeature,
+    MediaPlayerState,
 )
-from homeassistant.const import (
-    CONF_HOST,
-    CONF_NAME,
-    CONF_PASSWORD,
-    CONF_PORT,
-    STATE_OFF,
-    STATE_ON,
-)
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT
+from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 CONF_ENCODING = "encoding"
 
@@ -36,12 +33,13 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     }
 )
 
-SUPPORT_PJLINK = (
-    SUPPORT_VOLUME_MUTE | SUPPORT_TURN_ON | SUPPORT_TURN_OFF | SUPPORT_SELECT_SOURCE
-)
 
-
-def setup_platform(hass, config, add_entities, discovery_info=None):
+def setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the PJLink platform."""
     host = config.get(CONF_HOST)
     port = config.get(CONF_PORT)
@@ -70,22 +68,28 @@ def format_input_source(input_source_name, input_source_number):
 class PjLinkDevice(MediaPlayerEntity):
     """Representation of a PJLink device."""
 
+    _attr_supported_features = (
+        MediaPlayerEntityFeature.VOLUME_MUTE
+        | MediaPlayerEntityFeature.TURN_ON
+        | MediaPlayerEntityFeature.TURN_OFF
+        | MediaPlayerEntityFeature.SELECT_SOURCE
+    )
+
     def __init__(self, host, port, name, encoding, password):
         """Iinitialize the PJLink device."""
         self._host = host
         self._port = port
-        self._name = name
+        self._attr_name = name
         self._password = password
         self._encoding = encoding
-        self._muted = False
-        self._pwstate = STATE_OFF
-        self._current_source = None
+        self._attr_is_volume_muted = False
+        self._attr_state = MediaPlayerState.OFF
         with self.projector() as projector:
-            if not self._name:
-                self._name = projector.get_name()
+            if not self._attr_name:
+                self._attr_name = projector.get_name()
             inputs = projector.get_inputs()
         self._source_name_mapping = {format_input_source(*x): x for x in inputs}
-        self._source_list = sorted(self._source_name_mapping.keys())
+        self._attr_source_list = sorted(self._source_name_mapping.keys())
 
     def projector(self):
         """Create PJLink Projector instance."""
@@ -96,83 +100,51 @@ class PjLinkDevice(MediaPlayerEntity):
         projector.authenticate(self._password)
         return projector
 
-    def update(self):
+    def update(self) -> None:
         """Get the latest state from the device."""
 
         with self.projector() as projector:
             try:
                 pwstate = projector.get_power()
                 if pwstate in ("on", "warm-up"):
-                    self._pwstate = STATE_ON
-                    self._muted = projector.get_mute()[1]
-                    self._current_source = format_input_source(*projector.get_input())
+                    self._attr_state = MediaPlayerState.ON
+                    self._attr_is_volume_muted = projector.get_mute()[1]
+                    self._attr_source = format_input_source(*projector.get_input())
                 else:
-                    self._pwstate = STATE_OFF
-                    self._muted = False
-                    self._current_source = None
+                    self._attr_state = MediaPlayerState.OFF
+                    self._attr_is_volume_muted = False
+                    self._attr_source = None
             except KeyError as err:
                 if str(err) == "'OK'":
-                    self._pwstate = STATE_OFF
-                    self._muted = False
-                    self._current_source = None
+                    self._attr_state = MediaPlayerState.OFF
+                    self._attr_is_volume_muted = False
+                    self._attr_source = None
                 else:
                     raise
             except ProjectorError as err:
                 if str(err) == "unavailable time":
-                    self._pwstate = STATE_OFF
-                    self._muted = False
-                    self._current_source = None
+                    self._attr_state = MediaPlayerState.OFF
+                    self._attr_is_volume_muted = False
+                    self._attr_source = None
                 else:
                     raise
 
-    @property
-    def name(self):
-        """Return the name of the device."""
-        return self._name
-
-    @property
-    def state(self):
-        """Return the state of the device."""
-        return self._pwstate
-
-    @property
-    def is_volume_muted(self):
-        """Return boolean indicating mute status."""
-        return self._muted
-
-    @property
-    def source(self):
-        """Return current input source."""
-        return self._current_source
-
-    @property
-    def source_list(self):
-        """Return all available input sources."""
-        return self._source_list
-
-    @property
-    def supported_features(self):
-        """Return projector supported features."""
-        return SUPPORT_PJLINK
-
-    def turn_off(self):
+    def turn_off(self) -> None:
         """Turn projector off."""
-        if self._pwstate == STATE_ON:
-            with self.projector() as projector:
-                projector.set_power("off")
+        with self.projector() as projector:
+            projector.set_power("off")
 
-    def turn_on(self):
+    def turn_on(self) -> None:
         """Turn projector on."""
-        if self._pwstate == STATE_OFF:
-            with self.projector() as projector:
-                projector.set_power("on")
+        with self.projector() as projector:
+            projector.set_power("on")
 
-    def mute_volume(self, mute):
+    def mute_volume(self, mute: bool) -> None:
         """Mute (true) of unmute (false) media player."""
         with self.projector() as projector:
             projector.set_mute(MUTE_AUDIO, mute)
 
-    def select_source(self, source):
+    def select_source(self, source: str) -> None:
         """Set the input source."""
         source = self._source_name_mapping[source]
         with self.projector() as projector:

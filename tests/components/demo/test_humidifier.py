@@ -3,19 +3,18 @@
 import pytest
 import voluptuous as vol
 
-from homeassistant.components.humidifier.const import (
+from homeassistant.components.humidifier import (
     ATTR_HUMIDITY,
     ATTR_MAX_HUMIDITY,
     ATTR_MIN_HUMIDITY,
-    ATTR_MODE,
     DOMAIN,
     MODE_AWAY,
-    MODE_ECO,
     SERVICE_SET_HUMIDITY,
     SERVICE_SET_MODE,
 )
 from homeassistant.const import (
     ATTR_ENTITY_ID,
+    ATTR_MODE,
     SERVICE_TOGGLE,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
@@ -106,13 +105,13 @@ async def test_set_hold_mode_eco(hass):
     await hass.services.async_call(
         DOMAIN,
         SERVICE_SET_MODE,
-        {ATTR_MODE: MODE_ECO, ATTR_ENTITY_ID: ENTITY_HYGROSTAT},
+        {ATTR_MODE: "eco", ATTR_ENTITY_ID: ENTITY_HYGROSTAT},
         blocking=True,
     )
     await hass.async_block_till_done()
 
     state = hass.states.get(ENTITY_HYGROSTAT)
-    assert state.attributes.get(ATTR_MODE) == MODE_ECO
+    assert state.attributes.get(ATTR_MODE) == "eco"
 
 
 async def test_turn_on(hass):

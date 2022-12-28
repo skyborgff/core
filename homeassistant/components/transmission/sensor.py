@@ -1,9 +1,18 @@
 """Support for monitoring the Transmission BitTorrent client API."""
-from homeassistant.const import CONF_NAME, DATA_RATE_MEGABYTES_PER_SECOND, STATE_IDLE
-from homeassistant.core import callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import Entity
+from __future__ import annotations
 
+from contextlib import suppress
+
+from transmission_rpc.torrent import Torrent
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME, STATE_IDLE, UnitOfDataRate
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from . import TransmissionClient
 from .const import (
     CONF_LIMIT,
     CONF_ORDER,
@@ -13,7 +22,11 @@ from .const import (
 )
 
 
-async def async_setup_entry(hass, config_entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     """Set up the Transmission sensors."""
 
     tm_client = hass.data[DOMAIN][config_entry.entry_id]
@@ -33,12 +46,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities(dev, True)
 
 
-class TransmissionSensor(Entity):
+class TransmissionSensor(SensorEntity):
     """A base class for all Transmission sensors."""
+
+    _attr_should_poll = False
 
     def __init__(self, tm_client, client_name, sensor_name, sub_type=None):
         """Initialize the sensor."""
-        self._tm_client = tm_client
+        self._tm_client: TransmissionClient = tm_client
         self._client_name = client_name
         self._name = sensor_name
         self._sub_type = sub_type
@@ -55,21 +70,16 @@ class TransmissionSensor(Entity):
         return f"{self._tm_client.api.host}-{self.name}"
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
         return self._state
 
     @property
-    def should_poll(self):
-        """Return the polling requirement for this sensor."""
-        return False
-
-    @property
-    def available(self):
+    def available(self) -> bool:
         """Could the device be accessed during the last update call."""
         return self._tm_client.api.available
 
-    async def async_added_to_hass(self):
+    async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
 
         @callback
@@ -87,15 +97,12 @@ class TransmissionSensor(Entity):
 class TransmissionSpeedSensor(TransmissionSensor):
     """Representation of a Transmission speed sensor."""
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement of this entity, if any."""
-        return DATA_RATE_MEGABYTES_PER_SECOND
+    _attr_device_class = SensorDeviceClass.DATA_RATE
+    _attr_native_unit_of_measurement = UnitOfDataRate.MEGABYTES_PER_SECOND
 
-    def update(self):
+    def update(self) -> None:
         """Get the latest data from Transmission and updates the state."""
-        data = self._tm_client.api.data
-        if data:
+        if data := self._tm_client.api.data:
             mb_spd = (
                 float(data.downloadSpeed)
                 if self._sub_type == "download"
@@ -108,10 +115,9 @@ class TransmissionSpeedSensor(TransmissionSensor):
 class TransmissionStatusSensor(TransmissionSensor):
     """Representation of a Transmission status sensor."""
 
-    def update(self):
+    def update(self) -> None:
         """Get the latest data from Transmission and updates the state."""
-        data = self._tm_client.api.data
-        if data:
+        if data := self._tm_client.api.data:
             upload = data.uploadSpeed
             download = data.downloadSpeed
             if upload > 0 and download > 0:
@@ -138,26 +144,24 @@ class TransmissionTorrentsSensor(TransmissionSensor):
     }
 
     @property
-    def unit_of_measurement(self):
+    def native_unit_of_measurement(self):
         """Return the unit of measurement of this entity, if any."""
         return "Torrents"
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the state attributes, if any."""
-        limit = self._tm_client.config_entry.options[CONF_LIMIT]
-        order = self._tm_client.config_entry.options[CONF_ORDER]
-        torrents = self._tm_client.api.torrents[0:limit]
         info = _torrents_info(
-            torrents,
-            order=order,
+            torrents=self._tm_client.api.torrents,
+            order=self._tm_client.config_entry.options[CONF_ORDER],
+            limit=self._tm_client.config_entry.options[CONF_LIMIT],
             statuses=self.SUBTYPE_MODES[self._sub_type],
         )
         return {
             STATE_ATTR_TORRENT_INFO: info,
         }
 
-    def update(self):
+    def update(self) -> None:
         """Get the latest data from Transmission and updates the state."""
         torrents = _filter_torrents(
             self._tm_client.api.torrents, statuses=self.SUBTYPE_MODES[self._sub_type]
@@ -165,7 +169,7 @@ class TransmissionTorrentsSensor(TransmissionSensor):
         self._state = len(torrents)
 
 
-def _filter_torrents(torrents, statuses=None):
+def _filter_torrents(torrents: list[Torrent], statuses=None) -> list[Torrent]:
     return [
         torrent
         for torrent in torrents
@@ -173,19 +177,17 @@ def _filter_torrents(torrents, statuses=None):
     ]
 
 
-def _torrents_info(torrents, order, statuses=None):
+def _torrents_info(torrents, order, limit, statuses=None):
     infos = {}
     torrents = _filter_torrents(torrents, statuses)
     torrents = SUPPORTED_ORDER_MODES[order](torrents)
-    for torrent in _filter_torrents(torrents, statuses):
+    for torrent in torrents[:limit]:
         info = infos[torrent.name] = {
             "added_date": torrent.addedDate,
             "percent_done": f"{torrent.percentDone * 100:.2f}",
             "status": torrent.status,
             "id": torrent.id,
         }
-        try:
+        with suppress(ValueError):
             info["eta"] = str(torrent.eta)
-        except ValueError:
-            pass
     return infos

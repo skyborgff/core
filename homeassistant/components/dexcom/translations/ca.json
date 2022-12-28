@@ -1,7 +1,7 @@
 {
     "config": {
         "abort": {
-            "already_configured": "El compte ja ha estat configurat"
+            "already_configured": "El compte ja est\u00e0 configurat"
         },
         "error": {
             "cannot_connect": "Ha fallat la connexi\u00f3",
@@ -16,7 +16,7 @@
                     "username": "Nom d'usuari"
                 },
                 "description": "Introdueix les credencials de Dexcom Share",
-                "title": "Configura la integraci\u00f3 de Dexcom"
+                "title": "Configura la integraci\u00f3 Dexcom"
             }
         }
     },

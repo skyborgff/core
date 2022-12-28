@@ -46,7 +46,15 @@ async def test_http_handle_intent(hass, hass_client, hass_admin_user):
         "card": {
             "simple": {"content": "You chose a Belgian.", "title": "Beer ordered"}
         },
-        "speech": {"plain": {"extra_data": None, "speech": "I've ordered a Belgian!"}},
+        "speech": {
+            "plain": {
+                "extra_data": None,
+                "speech": "I've ordered a Belgian!",
+            }
+        },
+        "language": hass.config.language,
+        "response_type": "action_done",
+        "data": {"targets": [], "success": [], "failed": []},
     }
 
 
@@ -60,6 +68,7 @@ async def test_cover_intents_loading(hass):
         )
 
     assert await async_setup_component(hass, "cover", {})
+    await hass.async_block_till_done()
 
     hass.states.async_set("cover.garage_door", "closed")
     calls = async_mock_service(hass, "cover", SERVICE_OPEN_COVER)
@@ -81,6 +90,7 @@ async def test_turn_on_intent(hass):
     """Test HassTurnOn intent."""
     result = await async_setup_component(hass, "homeassistant", {})
     result = await async_setup_component(hass, "intent", {})
+    await hass.async_block_till_done()
     assert result
 
     hass.states.async_set("light.test_light", "off")
