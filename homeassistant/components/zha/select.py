@@ -472,9 +472,10 @@ class InovelliOutputModeEntity(ZCLEnumSelectEntity, id_suffix="output_mode"):
 class InovelliSwitchType(types.enum8):
     """Inovelli output mode."""
 
-    Load_Only = 0x00
+    Single_Pole = 0x00
     Three_Way_Dumb = 0x01
     Three_Way_AUX = 0x02
+    Single_Pole_Full_Sine = 0x03
 
 
 @CONFIG_DIAGNOSTIC_MATCH(
@@ -486,6 +487,44 @@ class InovelliSwitchTypeEntity(ZCLEnumSelectEntity, id_suffix="switch_type"):
     _select_attr = "switch_type"
     _enum = InovelliSwitchType
     _attr_name: str = "Switch type"
+
+
+class InovelliLedScalingMode(types.enum1):
+    """Inovelli led mode."""
+
+    VZM31SN = 0x00
+    LZW31SN = 0x01
+
+
+@CONFIG_DIAGNOSTIC_MATCH(
+    channel_names=CHANNEL_INOVELLI,
+)
+class InovelliLedScalingModeEntity(ZCLEnumSelectEntity, id_suffix="led_scaling_mode"):
+    """Inovelli led mode control."""
+
+    _select_attr = "led_scaling_mode"
+    _enum = InovelliLedScalingMode
+    _attr_name: str = "Led scaling mode"
+
+
+class InovelliNonNeutralOutput(types.enum1):
+    """Inovelli non neutral output selection."""
+
+    Low = 0x00
+    High = 0x01
+
+
+@CONFIG_DIAGNOSTIC_MATCH(
+    channel_names=CHANNEL_INOVELLI,
+)
+class InovelliNonNeutralOutputEntity(
+    ZCLEnumSelectEntity, id_suffix="increased_non_neutral_output"
+):
+    """Inovelli non neutral output control."""
+
+    _select_attr = "increased_non_neutral_output"
+    _enum = InovelliNonNeutralOutput
+    _attr_name: str = "Non neutral output"
 
 
 class AqaraFeedingMode(types.enum8):
@@ -503,3 +542,20 @@ class AqaraPetFeederMode(ZCLEnumSelectEntity, id_suffix="feeding_mode"):
     _enum = AqaraFeedingMode
     _attr_name = "Mode"
     _attr_icon: str = "mdi:wrench-clock"
+
+
+class AqaraThermostatPresetMode(types.enum8):
+    """Thermostat preset mode."""
+
+    Manual = 0x00
+    Auto = 0x01
+    Away = 0x02
+
+
+@CONFIG_DIAGNOSTIC_MATCH(channel_names="opple_cluster", models={"lumi.airrtc.agl001"})
+class AqaraThermostatPreset(ZCLEnumSelectEntity, id_suffix="preset"):
+    """Representation of an Aqara thermostat preset configuration entity."""
+
+    _select_attr = "preset"
+    _enum = AqaraThermostatPresetMode
+    _attr_name = "Preset"
